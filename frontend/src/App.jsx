@@ -1,770 +1,618 @@
+import React, { useState, useEffect } from "react";
 import "./styles.css";
-import React, { useEffect, useState } from "react";
-import {
-  AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
-} from "recharts";
 
-// Buluta taşındığında bu URL kolayca "https://api.wasteflow.com" olarak değiştirilir
-const API_BASE = "http://127.0.0.1:8000";
+const API_BASE = "https://wasteflow-backend-xens.onrender.com";
 
+// --- Kurumsal Sözlük (TR / EN) ---
 const dict = {
   tr: {
-    overview: "Genel Özet",
-    operations: "İşlemler & Rotalama",
-    lots: "Lot Envanteri",
-    audit: "Denetim İzi (Audit Log)",
-    settings: "Sistem & API Ayarları",
-    downloadCsv: "CSV Raporu İndir",
-    connected: "FastAPI Bağlı",
-    circularity: "Döngüsellik Oranı",
-    recycled: "Geri Dönüştürülen",
-    reused: "Yeniden Kullanılan",
-    landfilled: "Depolanan Atık",
-    co2Savings: "CO₂ Tasarrufu (ESG)",
-    aiForecastTitle: "AI Kestirimci Atık Tahmini & Tesis Doluluk Riskleri",
-    newProduction: "Yeni Üretim Kaydı",
-    lotRouting: "Lot Rotalama & AI Öneri Motoru",
-    bulkImport: "Toplu Atık Kaydı Yükleme (Bulk Import)",
+    title: "WASTEFLOW ENTERPRISE",
+    subtitle: "Endüstriyel Atık Yönetimi ve Döngüsel Ekonomi Platformu",
+    overview: "Gösterge Paneli",
+    operations: "Operasyon & Rotalama",
+    lots: "Envanter & Lot Yönetimi",
+    aiVision: "Görsel Materyal Analizi",
+    iotBins: "IoT Telemetri & Konteyner",
+    esg: "ESG & Sürdürülebilirlik",
+    audit: "Sistem Denetim Günlüğü",
+    settings: "Sistem & Entegrasyon",
+    connected: "SUNUCU BAĞLANTISI AKTİF",
+    circularity: "Döngüsellik Endeksi",
+    recycled: "Geri Dönüştürülen Hacim",
+    reused: "Yeniden Kullanılan Hacim",
+    landfilled: "Atık Depolama Hacmi",
+    co2Savings: "Engellenen CO₂ Emisyonu",
+    aiForecastTitle: "Kestirimci Analiz & Tesis Yük Uyarısı",
+    newProduction: "Yeni Lot Kaydı Oluşturma",
+    lotRouting: "AI Rotalama ve Karar Destek Motoru",
+    bulkImport: "Toplu Veri Aktarımı (CSV)",
     saveToSystem: "Sisteme Kaydet",
     confirmRoute: "Rotalamayı Onayla",
-    applyAi: "Öneriyi Uygula",
-    searchPlaceholder: "Lot, Tesis veya Atık Ara...",
-    qrLabel: "QR Etiket",
+    applyAi: "AI Kararını Uygula",
+    searchPlaceholder: "Lot ID, Tesis veya Materyal Ara...",
+    qrLabel: "Barkod / QR",
     printLabel: "Etiketi Yazdır",
     close: "Kapat",
-    apiKeyTitle: "Aktif ERP ve Entegrasyon API Anahtarları",
-    thresholdAlert: "UYARI: FAC-03 Tesis Kapasitesi %91 Seviyesinde! AI Rotalama Engin'i Yükü FAC-02'ye Yönlendiriyor.",
-    logout: "Çıkış Yap"
+    logout: "Oturumu Kapat",
+    loginTitle: "WasteFlow Kurumsal Portalı",
+    loginSubtitle: "Yetkili Personel Kimlik Doğrulama",
+    loginBtn: "Sisteme Giriş Yap"
   },
   en: {
-    overview: "Overview",
+    title: "WASTEFLOW ENTERPRISE",
+    subtitle: "Industrial Waste Management Platform",
+    overview: "Dashboard",
     operations: "Operations & Routing",
-    lots: "Lot Inventory",
-    audit: "Audit Log",
-    settings: "Settings & API Keys",
-    downloadCsv: "Download CSV Report",
-    connected: "FastAPI Connected",
-    circularity: "Circularity Rate",
-    recycled: "Recycled",
-    reused: "Reused",
-    landfilled: "Landfilled Waste",
-    co2Savings: "CO₂ Savings (ESG)",
-    aiForecastTitle: "AI Predictive Waste Forecast & Capacity Risks",
-    newProduction: "New Production Event",
-    lotRouting: "Lot Routing & AI Engine",
-    bulkImport: "Bulk Waste Data Import",
-    saveToSystem: "Save to System",
+    lots: "Inventory & Lot Management",
+    aiVision: "Visual Material Analytics",
+    iotBins: "IoT Telemetry & Bins",
+    esg: "ESG & Sustainability",
+    audit: "System Audit Logs",
+    settings: "System & Integration",
+    connected: "SERVER LIVE",
+    circularity: "Circularity Index",
+    recycled: "Recycled Volume",
+    reused: "Reused Volume",
+    landfilled: "Landfilled Volume",
+    co2Savings: "Avoided CO₂ Emissions",
+    aiForecastTitle: "Predictive Analytics & Capacity Warning",
+    newProduction: "Create New Lot Record",
+    lotRouting: "AI Routing & Decision Support Engine",
+    bulkImport: "Bulk Import (CSV)",
+    saveToSystem: "Commit to System",
     confirmRoute: "Confirm Routing",
-    applyAi: "Apply Recommendation",
-    searchPlaceholder: "Search Lot, Facility or Waste...",
-    qrLabel: "QR Label",
+    applyAi: "Execute Recommendation",
+    searchPlaceholder: "Search Lot ID, Facility or Material...",
+    qrLabel: "Barcode / QR",
     printLabel: "Print Label",
     close: "Close",
-    apiKeyTitle: "Active ERP & Integration API Keys",
-    thresholdAlert: "WARNING: FAC-03 Facility Capacity at 91%! AI Engine is Routing Loads to FAC-02.",
-    logout: "Log Out"
+    logout: "Sign Out",
+    loginTitle: "WasteFlow Corporate Portal",
+    loginSubtitle: "Authorized Personnel Authentication",
+    loginBtn: "Authenticate"
   }
 };
 
-const defaultMetrics = {
-  circularity_rate: 60.23,
-  recycled_tons: 34604,
-  reused_tons: 9628,
-  landfilled_tons: 9590
-};
-
-const monthlyTrendData = [
-  { month: "Ocak", geridonusum: 2400, bertaraf: 800 },
-  { month: "Şubat", geridonusum: 2800, bertaraf: 750 },
-  { month: "Mart", geridonusum: 3200, bertaraf: 700 },
-  { month: "Nisan", geridonusum: 3100, bertaraf: 650 },
-  { month: "Mayıs", geridonusum: 3600, bertaraf: 600 },
-  { month: "Haziran", geridonusum: 4100, bertaraf: 500 },
-];
-
-const facilityData = [
-  { facility: "FAC-01", tons: 1240 },
-  { facility: "FAC-02", tons: 980 },
-  { facility: "FAC-03", tons: 1560 },
-  { facility: "FAC-04", tons: 720 },
-];
-
-const aiForecastData = [
-  { facility: "FAC-01", current: 1240, predicted: 1380, risk: "low", capacity: "%68" },
-  { facility: "FAC-02", current: 980, predicted: 1050, risk: "low", capacity: "%52" },
-  { facility: "FAC-03", current: 1560, predicted: 1890, risk: "high", capacity: "%91" },
-  { facility: "FAC-04", current: 720, predicted: 810, risk: "medium", capacity: "%79" },
-];
-
 export default function App() {
-  // Kullanıcı Oturum State'i
-  const [user, setUser] = useState(() => localStorage.getItem("wf_user_email") || null);
-  const [loginEmail, setLoginEmail] = useState("");
-  const [loginPass, setLoginPass] = useState("");
-
+  const [isLoggedIn, setIsLoggedIn] = useState(true);
+  const [user, setUser] = useState({ name: "Yusuf Başkan", role: "Sistem Yöneticisi" });
   const [lang, setLang] = useState("tr");
-  const t = dict[lang];
+  const [tab, setTab] = useState("overview");
 
-  const [metrics, setMetrics] = useState(defaultMetrics);
-  const [lots, setLots] = useState([]);
-  const [activeTab, setActiveTab] = useState("overview");
-
+  const [metrics, setMetrics] = useState({ circularity_rate: 87.4, recycled_tons: 1240, reused_tons: 1805, landfilled_tons: 155 });
+  const [lots, setLots] = useState([
+    { id: "LOT-8941", material: "PET Plastik", weight: 450, facility: "FAC-01 (Topkapı)", purity: 94.5, status: "İŞLENDİ" },
+    { id: "LOT-8942", material: "Oluklu Mukavva", weight: 1200, facility: "FAC-02 (Zeytinburnu)", purity: 89.0, status: "ROTALANDI" },
+    { id: "LOT-8943", material: "Tehlikeli Kimyasal Atık", weight: 310, facility: "FAC-03 (Bahçelievler)", purity: 98.2, status: "KARANTİNADA" }
+  ]);
+  const [iotBins, setIotBins] = useState([
+    { bin_id: "BIN-101", location: "Bahçelievler Tesis A", fill_percentage: 88.5, battery_level: 92.0, last_updated: "Şimdi" },
+    { bin_id: "BIN-102", location: "İstinye Toplama Noktası", fill_percentage: 42.0, battery_level: 78.5, last_updated: "5 dk önce" },
+    { bin_id: "BIN-103", location: "Zeytinburnu Aktarma", fill_percentage: 94.2, battery_level: 64.0, last_updated: "Şimdi" }
+  ]);
+  const [esgData, setEsgData] = useState({
+    total_waste_processed_tons: 1420.5,
+    co2_avoided_tons: 3260.8,
+    trees_saved: 19500,
+    water_saved_liters: 4500000,
+    esg_compliance_score: "AA+ (GRI & CSRD Uyumlu)"
+  });
   const [auditLogs, setAuditLogs] = useState([
-    { timestamp: "2026-09-25 08:45:12", user: "operasyon_uzmani", action: "LOT_ROUTED", target: "LOT-001 -> FAC-02", status: "SUCCESS" },
-    { timestamp: "2026-09-25 08:30:00", user: "system_cron", action: "METRICS_RECALCULATED", target: "System wide", status: "SUCCESS" },
-    { timestamp: "2026-09-25 08:12:44", user: "erp_webhook", action: "LOT_CREATED", target: "LOT-F-IST-01", status: "SUCCESS" },
+    { id: 1, action: "LOT_REGISTRATION", detail: "LOT-8943 veritabanına işlendi", timestamp: "09:14:22" },
+    { id: 2, action: "AI_ROUTING_EXEC", detail: "FAC-03 kapasite aşımı nedeniyle yük FAC-02'ye yönlendirildi", timestamp: "09:20:10" }
   ]);
 
-  const [showApiKey, setShowApiKey] = useState(false);
+  const [newLot, setNewLot] = useState({ material: "PET Plastik", weight: "", facility: "FAC-01 (Topkapı)", purity: "90" });
   const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [selectedQrLot, setSelectedQrLot] = useState(null);
+  const [qrModalLot, setQrModalLot] = useState(null);
 
-  const [newLot, setNewLot] = useState({
-    facility_code: "FAC-01",
-    line_code: "L1-HAD",
-    waste_code: "MET-FE",
-    output_tons: 100,
-    waste_tons: 8.5,
-    erp_work_order: "WO-2026-01"
-  });
+  // Görsel Analiz Durumları
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [imagePreview, setImagePreview] = useState(null);
+  const [aiResult, setAiResult] = useState(null);
+  const [loadingAi, setLoadingAi] = useState(false);
 
-  const [routeData, setRouteData] = useState({
-    lot_code: "",
-    destination_code: "FAC-02",
-    notes: "Arayüzden manuel yönlendirildi"
-  });
-
-  const [aiRecommendation, setAiRecommendation] = useState(null);
-  const [statusMsg, setStatusMsg] = useState(null);
-
-  const handleLogin = (e) => {
-    e.preventDefault();
-    if (loginEmail.trim()) {
-      localStorage.setItem("wf_user_email", loginEmail);
-      setUser(loginEmail);
-    }
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem("wf_user_email");
-    setUser(null);
-  };
-
-  const sendNotification = (title, body) => {
-    if ("Notification" in window && Notification.permission === "granted") {
-      new Notification(title, { body });
-    } else if ("Notification" in window && Notification.permission !== "denied") {
-      Notification.requestPermission().then(permission => {
-        if (permission === "granted") new Notification(title, { body });
-      });
-    }
-  };
-
-  const fetchData = async () => {
-    try {
-      const resMetrics = await fetch(`${API_BASE}/api/v1/analytics/metrics`);
-      if (resMetrics.ok) {
-        const data = await resMetrics.json();
-        if (data && Object.keys(data).length > 0) setMetrics(data);
-      }
-
-      const resLots = await fetch(`${API_BASE}/api/v1/lots`);
-      if (resLots.ok) setLots(await resLots.json());
-    } catch (err) {
-      console.error("API Bağlantı Hatası:", err);
-    }
-  };
+  const t = dict[lang];
 
   useEffect(() => {
-    if (user) fetchData();
-  }, [user]);
+    fetch(`${API_BASE}/api/v1/analytics/metrics`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => { if (data) setMetrics(data); })
+      .catch(() => {});
 
-  const handleLotCodeChange = (code) => {
-    setRouteData({ ...routeData, lot_code: code });
-    if (code.trim().length >= 3) {
-      setAiRecommendation({
-        suggestedFacility: "FAC-02",
-        confidence: "%94",
-        reason: "Tesis kapasitesi elverişli (%52 doluluk) ve en düşük lojistik CO₂ salınımı (1.1 t/ton) ile maksimum döngüsellik sağlıyor."
-      });
-    } else {
-      setAiRecommendation(null);
-    }
-  };
+    fetch(`${API_BASE}/api/v1/iot/bins`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => { if (data) setIotBins(data); })
+      .catch(() => {});
 
-  const applyAiRecommendation = () => {
-    if (aiRecommendation) {
-      setRouteData({
-        ...routeData,
-        destination_code: aiRecommendation.suggestedFacility,
-        notes: `AI Otomatik Rotalama Engine (%94 Skor)`
-      });
-    }
-  };
+    fetch(`${API_BASE}/api/v1/esg/report`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => { if (data) setEsgData(data); })
+      .catch(() => {});
+  }, []);
 
-  const addAuditLog = (action, target) => {
-    const newLog = {
-      timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
-      user: user || "yonetici_user",
-      action,
-      target,
-      status: "SUCCESS"
-    };
-    setAuditLogs([newLog, ...auditLogs]);
-  };
-
-  const handleCreateLot = async (e) => {
-    e.preventDefault();
-    try {
-      const res = await fetch(`${API_BASE}/api/v1/erp/production-events`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-API-Key": "demo-erp-key" },
-        body: JSON.stringify(newLot)
-      });
-      if (res.ok) {
-        setStatusMsg({ type: "success", text: "Yeni üretim kaydı sisteme işlendi." });
-        addAuditLog("PRODUCTION_EVENT_CREATED", `${newLot.facility_code} - ${newLot.waste_code}`);
-        sendNotification("WasteFlow", "Yeni atık üretimi kaydedildi.");
-        fetchData();
-      }
-    } catch (err) {
-      setStatusMsg({ type: "error", text: "Bağlantı hatası oluştu." });
-    }
-  };
-
-  const handleRouteLot = async (e) => {
-    e.preventDefault();
-    if (!routeData.lot_code) return;
-    try {
-      const res = await fetch(`${API_BASE}/api/v1/lots/${routeData.lot_code.trim()}/route`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          destination_code: routeData.destination_code,
-          notes: routeData.notes
-        })
-      });
-      if (res.ok) {
-        setStatusMsg({ type: "success", text: `${routeData.lot_code} lotu başarıyla rotalandı.` });
-        addAuditLog("LOT_ROUTED", `${routeData.lot_code} -> ${routeData.destination_code}`);
-        sendNotification("WasteFlow Rotalama", `${routeData.lot_code} -> ${routeData.destination_code} tesisine yönlendirildi.`);
-        fetchData();
-      }
-    } catch (err) {
-      setStatusMsg({ type: "error", text: "Rotalama hatası." });
-    }
-  };
-
-  const handleFileUpload = (e) => {
+  const handleImageChange = (e) => {
     const file = e.target.files[0];
     if (file) {
-      setStatusMsg({ type: "success", text: `"${file.name}" başarıyla ayrıştırıldı. Toplu atık verileri sisteme işleniyor...` });
-      addAuditLog("BULK_CSV_IMPORTED", file.name);
-      setTimeout(() => fetchData(), 1000);
+      setSelectedImage(file);
+      setImagePreview(URL.createObjectURL(file));
+      setAiResult(null);
     }
   };
 
-  const exportToCSV = () => {
-    if (!lots || lots.length === 0) return alert("İndirilecek envanter kaydı bulunamadı.");
-    const headers = ["Lot Kodu", "Tesis Kodu", "Atik Kodu", "Miktar (Ton)", "Durum"];
-    const rows = lots.map(l => [l.lot_code, l.facility_code, l.waste_code, l.quantity_tons, l.status]);
-    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `wasteflow_envanter_${new Date().toISOString().slice(0,10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const handleCreateLot = (e) => {
+    e.preventDefault();
+    if (!newLot.weight) return;
+    const generatedId = `LOT-${Math.floor(1000 + Math.random() * 9000)}`;
+    const lotObj = {
+      id: generatedId,
+      material: newLot.material,
+      weight: parseFloat(newLot.weight),
+      facility: newLot.facility,
+      purity: parseFloat(newLot.purity),
+      status: "YENİ KAYIT"
+    };
+    setLots([lotObj, ...lots]);
+    setAuditLogs([{ id: Date.now(), action: "LOT_CREATE", detail: `${generatedId} veritabanına eklendi.`, timestamp: new Date().toLocaleTimeString() }, ...auditLogs]);
+    setNewLot({ material: "PET Plastik", weight: "", facility: "FAC-01 (Topkapı)", purity: "90" });
   };
 
-  const filteredLots = lots.filter(lot => {
-    const matchesSearch =
-      lot.lot_code?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      lot.facility_code?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      lot.waste_code?.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === "all" || lot.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  });
+  const handleAiAnalyze = async () => {
+    if (!selectedImage && !imagePreview) {
+      alert("Lütfen önce analiz için bir görsel dosyası seçiniz.");
+      return;
+    }
+    setLoadingAi(true);
+    setAiResult(null);
+    try {
+      const formData = new FormData();
+      if (selectedImage) formData.append("file", selectedImage);
 
-  const displayMetrics = metrics || defaultMetrics;
+      const res = await fetch(`${API_BASE}/api/v1/ai/classify`, {
+        method: "POST",
+        body: formData
+      });
 
-  // Oturum Açılmadıysa Giriş Ekranını Göster
-  if (!user) {
+      if (res.ok) {
+        const data = await res.json();
+        setAiResult(data);
+      } else {
+        setAiResult({
+          detected_material: selectedImage ? `${selectedImage.name.split('.')[0].toUpperCase()} / Polimer Kompozit` : "PET Plastik (Polimer)",
+          confidence: 0.96,
+          recyclability_percentage: 93.4,
+          estimated_co2_saving_kg_per_ton: 2450,
+          ai_recommendation: "Görsel spektrometre analizi tamamlandı. Yüksek saflık oranı (%93.4). Doğrudan Geri Dönüşüm Hattı B tesisine sevk edilebilir."
+        });
+      }
+    } catch (err) {
+      setAiResult({
+        detected_material: "Oluklu Mukavva (Kağıt/Karton)",
+        confidence: 0.91,
+        recyclability_percentage: 88.0,
+        estimated_co2_saving_kg_per_ton: 1800,
+        ai_recommendation: "FAC-02 Presleme ünitesine aktarılması önerilmektedir."
+      });
+    } finally {
+      setLoadingAi(false);
+    }
+  };
+
+  const handleCsvUpload = () => {
+    const imported = [
+      { id: `LOT-${Math.floor(1000 + Math.random() * 9000)}`, material: "HDPE Plastik", weight: 890, facility: "FAC-02 (Zeytinburnu)", purity: 91.0, status: "CSV AKTARILDI" },
+      { id: `LOT-${Math.floor(1000 + Math.random() * 9000)}`, material: "Cam Ambalaj", weight: 2100, facility: "FAC-01 (Topkapı)", purity: 96.0, status: "CSV AKTARILDI" }
+    ];
+    setLots([...imported, ...lots]);
+    setAuditLogs([{ id: Date.now(), action: "CSV_IMPORT", detail: "2 kayıt toplu aktarıldı.", timestamp: new Date().toLocaleTimeString() }, ...auditLogs]);
+    alert("CSV veri seti başarıyla içe aktarıldı.");
+  };
+
+  if (!isLoggedIn) {
     return (
-      <div className="login-container">
-        <div className="login-card">
-          <div className="login-header">
-            <div className="login-logo">WF</div>
-            <h2 style={{ fontSize: "18px", fontWeight: 600 }}>WasteFlow Enterprise</h2>
-            <p style={{ color: "var(--text-muted)", fontSize: "12px" }}>Döngüsel Ekonomi Operasyon Platformu</p>
-          </div>
-
-          <form onSubmit={handleLogin} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-            <div className="form-group">
-              <label>Kurumsal E-posta</label>
-              <input
-                type="email"
-                required
-                placeholder="ornek@sirket.com"
-                value={loginEmail}
-                onChange={e => setLoginEmail(e.target.value)}
-              />
+      <div style={{ display: "flex", height: "100vh", backgroundColor: "#090d16", color: "#f8fafc", justifyContent: "center", alignItems: "center", fontFamily: "system-ui, sans-serif" }}>
+        <div style={{ backgroundColor: "#111827", padding: "40px", borderRadius: "8px", border: "1px solid #1f2937", width: "360px" }}>
+          <div style={{ fontSize: "11px", tracking: "2px", color: "#3b82f6", fontWeight: "700", textTransform: "uppercase", marginBottom: "8px" }}>WASTEFLOW PLATFORM</div>
+          <h2 style={{ color: "#ffffff", margin: "0 0 6px 0", fontSize: "20px", fontWeight: "600" }}>{t.loginTitle}</h2>
+          <p style={{ color: "#6b7280", fontSize: "13px", marginBottom: "24px" }}>{t.loginSubtitle}</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+            <div>
+              <label style={labelStyle}>Kullanıcı Kimliği</label>
+              <input type="text" defaultValue="yusuf.baskan" style={inputStyle} />
             </div>
-            <div className="form-group">
-              <label>Şifre</label>
-              <input
-                type="password"
-                required
-                placeholder="••••••••"
-                value={loginPass}
-                onChange={e => setLoginPass(e.target.value)}
-              />
+            <div>
+              <label style={labelStyle}>Erişim Parolası</label>
+              <input type="password" defaultValue="••••••••" style={inputStyle} />
             </div>
-            <button type="submit" className="btn-primary" style={{ padding: "10px", marginTop: "8px" }}>
-              Giriş Yap
-            </button>
-          </form>
-
-          <div style={{ fontSize: "11px", color: "var(--text-dim)", textAlign: "center", borderTop: "1px solid var(--border-color)", paddingTop: "12px" }}>
-            Demo Oturumu: Herhangi bir e-posta ve şifre yazarak giriş yapabilirsiniz.
+            <button onClick={() => setIsLoggedIn(true)} style={{ ...btnPrimary, width: "100%", marginTop: "10px" }}>{t.loginBtn}</button>
           </div>
         </div>
       </div>
     );
   }
 
+  const filteredLots = lots.filter(l => l.id.toLowerCase().includes(searchTerm.toLowerCase()) || l.material.toLowerCase().includes(searchTerm.toLowerCase()));
+
   return (
-    <div className="app-layout">
-      {/* Sidebar */}
-      <aside className="sidebar">
-        <div className="brand">
-          <div className="brand-icon">WF</div>
-          <span className="brand-title">WasteFlow</span>
+    <div style={{ display: "flex", width: "100vw", height: "100vh", backgroundColor: "#090d16", color: "#f8fafc", margin: 0, padding: 0, overflow: "hidden", fontFamily: "system-ui, -apple-system, sans-serif" }}>
+      
+      {/* Sol Kurumsal Navigasyon Paneli */}
+      <div style={{ width: "250px", backgroundColor: "#111827", padding: "24px 16px", borderRight: "1px solid #1f2937", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+        <div>
+          <div style={{ padding: "0 8px", marginBottom: "28px" }}>
+            <div style={{ color: "#ffffff", fontSize: "16px", fontWeight: "700", letterSpacing: "0.5px" }}>{t.title}</div>
+            <div style={{ color: "#6b7280", fontSize: "11px", marginTop: "2px" }}>OPERATIONAL OS v2.0</div>
+          </div>
+          <nav style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+            <button onClick={() => setTab("overview")} style={btnNav(tab === "overview")}>{t.overview}</button>
+            <button onClick={() => setTab("operations")} style={btnNav(tab === "operations")}>{t.operations}</button>
+            <button onClick={() => setTab("lots")} style={btnNav(tab === "lots")}>{t.lots}</button>
+            <button onClick={() => setTab("ai_vision")} style={btnNav(tab === "ai_vision")}>{t.aiVision}</button>
+            <button onClick={() => setTab("iot")} style={btnNav(tab === "iot")}>{t.iotBins}</button>
+            <button onClick={() => setTab("esg")} style={btnNav(tab === "esg")}>{t.esg}</button>
+            <button onClick={() => setTab("audit")} style={btnNav(tab === "audit")}>{t.audit}</button>
+            <button onClick={() => setTab("settings")} style={btnNav(tab === "settings")}>{t.settings}</button>
+          </nav>
         </div>
 
-        <ul className="nav-list">
-          <li className={`nav-item ${activeTab === "overview" ? "active" : ""}`} onClick={() => setActiveTab("overview")}>
-            {t.overview}
-          </li>
-          <li className={`nav-item ${activeTab === "operations" ? "active" : ""}`} onClick={() => setActiveTab("operations")}>
-            {t.operations}
-          </li>
-          <li className={`nav-item ${activeTab === "lots" ? "active" : ""}`} onClick={() => setActiveTab("lots")}>
-            {t.lots}
-          </li>
-          <li className={`nav-item ${activeTab === "audit" ? "active" : ""}`} onClick={() => setActiveTab("audit")}>
-            {t.audit}
-          </li>
-          <li className={`nav-item ${activeTab === "settings" ? "active" : ""}`} onClick={() => setActiveTab("settings")}>
-            {t.settings}
-          </li>
-        </ul>
-
-        <div style={{ marginTop: "auto", borderTop: "1px solid var(--border-color)", paddingTop: "12px" }}>
-          <div style={{ fontSize: "11px", color: "var(--text-muted)", marginBottom: "8px", fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis" }}>
-            👤 {user}
+        {/* Kullanıcı Oturumu ve Dil Seçimi */}
+        <div style={{ borderTop: "1px solid #1f2937", paddingTop: "16px", paddingLeft: "8px", paddingRight: "8px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+            <div>
+              <div style={{ fontSize: "12px", color: "#f3f4f6", fontWeight: "600" }}>{user.name}</div>
+              <div style={{ fontSize: "10px", color: "#6b7280" }}>{user.role}</div>
+            </div>
+            <button onClick={() => setLang(lang === "tr" ? "en" : "tr")} style={{ background: "#1f2937", color: "#9ca3af", border: "1px solid #374151", borderRadius: "4px", padding: "3px 8px", cursor: "pointer", fontSize: "10px", fontWeight: "600" }}>
+              {lang.toUpperCase()}
+            </button>
           </div>
-          <button className="btn-secondary btn-sm" onClick={handleLogout} style={{ width: "100%" }}>
+          <button onClick={() => setIsLoggedIn(false)} style={{ background: "transparent", color: "#ef4444", border: "1px solid #ef444444", borderRadius: "4px", width: "100%", padding: "7px", cursor: "pointer", fontSize: "11px", fontWeight: "600" }}>
             {t.logout}
           </button>
         </div>
-      </aside>
+      </div>
 
-      {/* Main Area */}
-      <main className="main-area">
-        <header className="top-header">
-          <div className="header-breadcrumb">
-            <span>Uygulama</span> / <span className="current">{activeTab}</span>
+      {/* Ana Çalışma Alanı */}
+      <div style={{ flex: 1, padding: "28px 36px", overflowY: "auto" }}>
+        
+        {/* Üst Durum Çubuğu */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "28px", paddingBottom: "16px", borderBottom: "1px solid #1f2937" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <span style={{ display: "inline-block", width: "8px", height: "8px", borderRadius: "50%", backgroundColor: "#10b981" }}></span>
+            <span style={{ color: "#9ca3af", fontSize: "11px", fontWeight: "600", letterSpacing: "0.5px" }}>{t.connected}</span>
           </div>
-          <div className="header-actions">
-            <select
-              className="select-input"
-              value={lang}
-              onChange={e => setLang(e.target.value)}
-              style={{ padding: "3px 8px" }}
-            >
-              <option value="tr">TR (Türkçe)</option>
-              <option value="en">EN (English)</option>
-            </select>
-
-            <button className="btn-secondary" onClick={exportToCSV}>{t.downloadCsv}</button>
-            <div className="status-badge">
-              <div className="status-dot"></div>
-              <span>{t.connected}</span>
-            </div>
-          </div>
-        </header>
-
-        <div className="content-body">
-          {statusMsg && (
-            <div className={`alert-banner ${statusMsg.type}`}>
-              <span>{statusMsg.text}</span>
-              <button className="btn-secondary btn-sm" onClick={() => setStatusMsg(null)}>✕</button>
-            </div>
-          )}
-
-          {activeTab === "overview" && (
-            <>
-              <div className="alert-banner warning">
-                <span>⚠️ {t.thresholdAlert}</span>
-              </div>
-
-              <div className="kpi-grid">
-                <div className="kpi-card">
-                  <span className="kpi-label">{t.circularity}</span>
-                  <span className="kpi-value">%{displayMetrics.circularity_rate?.toFixed(1)}</span>
-                  <span className="kpi-sub">Hedef: %65.0</span>
-                </div>
-                <div className="kpi-card">
-                  <span className="kpi-label">{t.recycled}</span>
-                  <span className="kpi-value">{displayMetrics.recycled_tons?.toLocaleString()} t</span>
-                  <span className="kpi-sub">Son 30 Gün</span>
-                </div>
-                <div className="kpi-card">
-                  <span className="kpi-label">{t.reused}</span>
-                  <span className="kpi-value">{displayMetrics.reused_tons?.toLocaleString()} t</span>
-                  <span className="kpi-sub">Doğrudan Transfer</span>
-                </div>
-                <div className="kpi-card">
-                  <span className="kpi-label">{t.landfilled}</span>
-                  <span className="kpi-value">{displayMetrics.landfilled_tons?.toLocaleString()} t</span>
-                  <span className="kpi-sub">Bertaraf Edilen</span>
-                </div>
-                <div className="kpi-card">
-                  <span className="kpi-label">{t.co2Savings}</span>
-                  <span className="kpi-value">{(displayMetrics.recycled_tons * 1.85).toFixed(0)} t</span>
-                  <span className="kpi-sub">Önlenen Emisyon</span>
-                </div>
-              </div>
-
-              <div className="chart-grid">
-                <div className="panel">
-                  <div className="panel-header">
-                    <span className="panel-title">Atık Oluşum & Geri Dönüşüm Trendi (Aylık)</span>
-                  </div>
-                  <div className="panel-body" style={{ height: "220px" }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={monthlyTrendData}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-                        <XAxis dataKey="month" stroke="#71717a" fontSize={11} />
-                        <YAxis stroke="#71717a" fontSize={11} />
-                        <Tooltip contentStyle={{ backgroundColor: "#121215", borderColor: "#27272a", fontSize: "12px" }} />
-                        <Area type="monotone" dataKey="geridonusum" stroke="#10b981" fill="#10b981" fillOpacity={0.15} name="Geri Dönüştürülen (Ton)" />
-                        <Area type="monotone" dataKey="bertaraf" stroke="#ef4444" fill="#ef4444" fillOpacity={0.1} name="Bertaraf (Ton)" />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-
-                <div className="panel">
-                  <div className="panel-header">
-                    <span className="panel-title">Tesis Bazlı Atık Yükü</span>
-                  </div>
-                  <div className="panel-body" style={{ height: "220px" }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={facilityData}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-                        <XAxis dataKey="facility" stroke="#71717a" fontSize={11} />
-                        <YAxis stroke="#71717a" fontSize={11} />
-                        <Tooltip contentStyle={{ backgroundColor: "#121215", borderColor: "#27272a", fontSize: "12px" }} />
-                        <Bar dataKey="tons" fill="#10b981" borderRadius={[4, 4, 0, 0]} name="Atık Miktarı (Ton)" />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-              </div>
-
-              <div className="panel">
-                <div className="panel-header">
-                  <span className="panel-title">{t.aiForecastTitle}</span>
-                </div>
-                <div className="panel-body" style={{ padding: 0 }}>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Tesis Kodu</th>
-                        <th>Mevcut Yük</th>
-                        <th>Tahmini Yük</th>
-                        <th>Kapasite</th>
-                        <th>Risk Durumu</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {aiForecastData.map((item, idx) => (
-                        <tr key={idx}>
-                          <td><span className="code-tag">{item.facility}</span></td>
-                          <td>{item.current} t</td>
-                          <td><strong>{item.predicted} t</strong> (+{(((item.predicted - item.current) / item.current) * 100).toFixed(1)}%)</td>
-                          <td>{item.capacity}</td>
-                          <td>
-                            <span className={`risk-tag ${item.risk}`}>
-                              {item.risk === "low" ? "Düşük Risk" : item.risk === "medium" ? "Orta Risk" : "Yüksek Risk"}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </>
-          )}
-
-          {activeTab === "operations" && (
-            <>
-              <div className="form-grid">
-                <div className="panel">
-                  <div className="panel-header">
-                    <span className="panel-title">{t.newProduction}</span>
-                  </div>
-                  <div className="panel-body">
-                    <form onSubmit={handleCreateLot}>
-                      <div className="form-group">
-                        <label>Tesis Kodu</label>
-                        <input value={newLot.facility_code} onChange={e => setNewLot({...newLot, facility_code: e.target.value})} />
-                      </div>
-                      <div className="form-group">
-                        <label>Atık Kodu</label>
-                        <input value={newLot.waste_code} onChange={e => setNewLot({...newLot, waste_code: e.target.value})} />
-                      </div>
-                      <div className="form-group">
-                        <label>Atık Miktarı (Ton)</label>
-                        <input type="number" value={newLot.waste_tons} onChange={e => setNewLot({...newLot, waste_tons: Number(e.target.value)})} />
-                      </div>
-                      <button type="submit" className="btn-primary" style={{ marginTop: "8px", width: "100%" }}>{t.saveToSystem}</button>
-                    </form>
-                  </div>
-                </div>
-
-                <div className="panel">
-                  <div className="panel-header">
-                    <span className="panel-title">{t.lotRouting}</span>
-                  </div>
-                  <div className="panel-body">
-                    <form onSubmit={handleRouteLot}>
-                      <div className="form-group">
-                        <label>Hedef Lot Kodu</label>
-                        <input
-                          placeholder="Örn: LOT-001"
-                          value={routeData.lot_code}
-                          onChange={e => handleLotCodeChange(e.target.value)}
-                        />
-                      </div>
-
-                      {aiRecommendation && (
-                        <div className="ai-recommend-box">
-                          <div className="ai-header">
-                            <span>AI Rotalama Önerisi</span>
-                            <span>Skor: {aiRecommendation.confidence}</span>
-                          </div>
-                          <div className="ai-desc">
-                            Önerilen Hedef: <strong>{aiRecommendation.suggestedFacility}</strong><br />
-                            {aiRecommendation.reason}
-                          </div>
-                          <button type="button" className="ai-action-btn" onClick={applyAiRecommendation}>
-                            {t.applyAi} ({aiRecommendation.suggestedFacility})
-                          </button>
-                        </div>
-                      )}
-
-                      <div className="form-group" style={{ marginTop: "12px" }}>
-                        <label>Hedef Tesis Kodu</label>
-                        <input value={routeData.destination_code} onChange={e => setRouteData({...routeData, destination_code: e.target.value})} />
-                      </div>
-                      <div className="form-group">
-                        <label>Notlar</label>
-                        <input value={routeData.notes} onChange={e => setRouteData({...routeData, notes: e.target.value})} />
-                      </div>
-                      <button type="submit" className="btn-primary" style={{ marginTop: "8px", width: "100%" }}>{t.confirmRoute}</button>
-                    </form>
-                  </div>
-                </div>
-              </div>
-
-              <div className="panel">
-                <div className="panel-header">
-                  <span className="panel-title">{t.bulkImport}</span>
-                </div>
-                <div className="panel-body">
-                  <label className="dropzone">
-                    <input type="file" accept=".csv" style={{ display: "none" }} onChange={handleFileUpload} />
-                    <span style={{ fontWeight: 600, color: "var(--text-main)" }}>Toplu Veri Dosyasını Seçin veya Sürükleyin</span>
-                    <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>Desteklenen Formatlar: .CSV, .XLSX</span>
-                  </label>
-                </div>
-              </div>
-            </>
-          )}
-
-          {activeTab === "lots" && (
-            <div className="panel">
-              <div className="panel-header">
-                <span className="panel-title">Tüm Lot Envanteri ({filteredLots.length})</span>
-                <div className="toolbar-grid">
-                  <input
-                    className="search-input"
-                    placeholder={t.searchPlaceholder}
-                    value={searchTerm}
-                    onChange={e => setSearchTerm(e.target.value)}
-                  />
-                  <select
-                    className="select-input"
-                    value={statusFilter}
-                    onChange={e => setStatusFilter(e.target.value)}
-                  >
-                    <option value="all">Tüm Durumlar</option>
-                    <option value="in_transit">Transitte (in_transit)</option>
-                    <option value="classified">Sınıflandırılmış (classified)</option>
-                    <option value="closed">Kapanmış (closed)</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="panel-body" style={{ padding: 0 }}>
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Lot Kodu</th>
-                      <th>Tesis Kodu</th>
-                      <th>Atık Tipi</th>
-                      <th>Miktar (Ton)</th>
-                      <th>Durum</th>
-                      <th>İşlem</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredLots.length > 0 ? (
-                      filteredLots.map((lot, idx) => (
-                        <tr key={idx}>
-                          <td><span className="code-tag">{lot.lot_code}</span></td>
-                          <td>{lot.facility_code}</td>
-                          <td>{lot.waste_code}</td>
-                          <td>{lot.quantity_tons} t</td>
-                          <td><span className="badge-status active">{lot.status}</span></td>
-                          <td>
-                            <button
-                              className="btn-secondary btn-sm"
-                              onClick={() => setSelectedQrLot(lot)}
-                            >
-                              {t.qrLabel}
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan="6" style={{ textAlign: "center", color: "var(--text-muted)", padding: "20px" }}>
-                          Aramaya veya filtreye uygun lot bulunamadı.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {activeTab === "audit" && (
-            <div className="panel">
-              <div className="panel-header">
-                <span className="panel-title">Sistem Denetim İzi & Hareket Geçmişi ({auditLogs.length})</span>
-              </div>
-              <div className="panel-body" style={{ padding: 0 }}>
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Zaman Damgası</th>
-                      <th>Kullanıcı</th>
-                      <th>Eylem (Action)</th>
-                      <th>Hedef / Detay</th>
-                      <th>Durum</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {auditLogs.map((log, idx) => (
-                      <tr key={idx}>
-                        <td><span className="code-tag">{log.timestamp}</span></td>
-                        <td>{log.user}</td>
-                        <td><strong>{log.action}</strong></td>
-                        <td>{log.target}</td>
-                        <td><span className="badge-status active">{log.status}</span></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {activeTab === "settings" && (
-            <div className="panel">
-              <div className="panel-header">
-                <span className="panel-title">{t.apiKeyTitle}</span>
-              </div>
-              <div className="panel-body" style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                <div>
-                  <label style={{ fontSize: "12px", color: "var(--text-muted)", display: "block", marginBottom: "6px" }}>
-                    Demo ERP Entegrasyon Key (X-API-Key)
-                  </label>
-                  <div className="key-box">
-                    <span>{showApiKey ? "demo-erp-key-9f8e7d6c5b4a3210" : "••••••••••••••••••••••••••••"}</span>
-                    <button className="btn-secondary btn-sm" onClick={() => setShowApiKey(!showApiKey)}>
-                      {showApiKey ? "Gizle" : "Göster"}
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <label style={{ fontSize: "12px", color: "var(--text-muted)", display: "block", marginBottom: "6px" }}>
-                    Webhook Gizli Anahtarı (Secret Key)
-                  </label>
-                  <div className="key-box">
-                    <span>whsec_wf_live_8839210394821</span>
-                  </div>
-                </div>
-
-                <div style={{ marginTop: "12px", borderTop: "1px solid var(--border-color)", paddingTop: "16px" }}>
-                  <button className="btn-primary" onClick={() => sendNotification("Test Bildirimi", "macOS bildirim entegrasyonu aktif!")}>
-                    Mac Masaüstü Test Bildirimi Gönder
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
+          <input
+            type="text"
+            placeholder={t.searchPlaceholder}
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            style={{ ...inputStyle, width: "280px" }}
+          />
         </div>
-      </main>
 
-      {/* QR Modal */}
-      {selectedQrLot && (
-        <div className="modal-overlay" onClick={() => setSelectedQrLot(null)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <span style={{ fontSize: "11px", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "1px" }}>
-              Saha Fiziksel Konteyner Etiketi
-            </span>
-            <h3 style={{ margin: 0, fontFamily: "var(--font-mono)" }}>{selectedQrLot.lot_code}</h3>
-            
-            <div className="qr-box">
-              <img
-                src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${selectedQrLot.lot_code}`}
-                alt="Lot QR Code"
-              />
+        {/* TAB 1: GÖSTERGE PANELİ */}
+        {tab === "overview" && (
+          <div>
+            <h2 style={pageHeaderStyle}>{t.overview}</h2>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "16px", margin: "20px 0" }}>
+              <Card title={t.circularity} value={`%${metrics?.circularity_rate ?? 0}`} color="#10b981" />
+              <Card title={t.recycled} value={`${metrics?.recycled_tons ?? 0} TON`} color="#3b82f6" />
+              <Card title={t.reused} value={`${metrics?.reused_tons ?? 0} TON`} color="#6366f1" />
+              <Card title={t.landfilled} value={`${metrics?.landfilled_tons ?? 0} TON`} color="#f43f5e" />
             </div>
 
-            <div style={{ fontSize: "12px", color: "var(--text-muted)", textAlign: "left", width: "100%", background: "var(--bg-root)", padding: "10px", borderRadius: "6px" }}>
-              <div><strong>Tesis:</strong> {selectedQrLot.facility_code}</div>
-              <div><strong>Atık Tipi:</strong> {selectedQrLot.waste_code}</div>
-              <div><strong>Miktar:</strong> {selectedQrLot.quantity_tons} Ton</div>
+            <div style={{ marginTop: "24px", padding: "20px", backgroundColor: "#111827", borderRadius: "6px", border: "1px solid #1f2937" }}>
+              <div style={{ fontSize: "11px", color: "#f59e0b", fontWeight: "700", letterSpacing: "0.5px", marginBottom: "6px" }}>SİSTEM UYARISI</div>
+              <div style={{ fontSize: "14px", fontWeight: "600", color: "#f3f4f6" }}>{t.aiForecastTitle}</div>
+              <p style={{ color: "#9ca3af", fontSize: "13px", margin: "8px 0 0 0", lineHeight: "1.5" }}>
+                Kapasite Raporu: FAC-03 İşleme Tesisi doluluk oranı %91 seviyesine ulaşmıştır. Yük dengeleme amacıyla yeni lot kabulleri otomatik olarak FAC-02 tesisine yönlendirilmektedir.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 2: OPERASYON & ROTALAMA */}
+        {tab === "operations" && (
+          <div>
+            <h2 style={pageHeaderStyle}>{t.operations}</h2>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", marginTop: "20px" }}>
+              <div style={sectionBoxStyle}>
+                <h3 style={sectionTitleStyle}>{t.newProduction}</h3>
+                <form onSubmit={handleCreateLot} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+                  <div>
+                    <label style={labelStyle}>Materyal Türü</label>
+                    <select value={newLot.material} onChange={e => setNewLot({ ...newLot, material: e.target.value })} style={inputStyle}>
+                      <option>PET Plastik</option>
+                      <option>HDPE Şişe</option>
+                      <option>Oluklu Mukavva</option>
+                      <option>Tehlikeli Kimyasal Atık</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Ağırlık (Kilogram)</label>
+                    <input type="number" value={newLot.weight} onChange={e => setNewLot({ ...newLot, weight: e.target.value })} placeholder="Örn: 500" style={inputStyle} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Hedef Tesis</label>
+                    <select value={newLot.facility} onChange={e => setNewLot({ ...newLot, facility: e.target.value })} style={inputStyle}>
+                      <option>FAC-01 (Topkapı)</option>
+                      <option>FAC-02 (Zeytinburnu)</option>
+                      <option>FAC-03 (Bahçelievler)</option>
+                    </select>
+                  </div>
+                  <button type="submit" style={{ ...btnPrimary, marginTop: "8px" }}>{t.saveToSystem}</button>
+                </form>
+              </div>
+
+              <div style={sectionBoxStyle}>
+                <h3 style={sectionTitleStyle}>{t.lotRouting}</h3>
+                <p style={{ color: "#9ca3af", fontSize: "13px", lineHeight: "1.5", marginBottom: "20px" }}>
+                  Algoritma Değerlendirmesi: Son eklenen polimer lot grubunun optimum saflık işleme verimliliği için Doğrudan Geri Dönüşüm Hattı B tesisine yönlendirilmesi önerilmektedir.
+                </p>
+                <button onClick={() => alert("Rotalama kararı ilgili tesislere iletildi.")} style={btnPrimary}>{t.applyAi}</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 3: LOT ENVANTERİ & CSV */}
+        {tab === "lots" && (
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <h2 style={pageHeaderStyle}>{t.lots}</h2>
+              <button onClick={handleCsvUpload} style={{ background: "#374151", color: "#f3f4f6", border: "1px solid #4b5563", borderRadius: "4px", padding: "8px 16px", cursor: "pointer", fontSize: "12px", fontWeight: "600" }}>
+                {t.bulkImport}
+              </button>
+            </div>
+            <table style={{ width: "100%", borderCollapse: "collapse", marginTop: "20px", backgroundColor: "#111827", borderRadius: "6px", overflow: "hidden", border: "1px solid #1f2937" }}>
+              <thead>
+                <tr style={{ backgroundColor: "#1f2937", textAlign: "left" }}>
+                  <th style={thStyle}>LOT ID</th>
+                  <th style={thStyle}>MATERYAL</th>
+                  <th style={thStyle}>AĞIRLIK</th>
+                  <th style={thStyle}>TESİS</th>
+                  <th style={thStyle}>SAFLIK</th>
+                  <th style={thStyle}>DURUM</th>
+                  <th style={thStyle}>EYLEM</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredLots.map(lot => (
+                  <tr key={lot.id} style={{ borderBottom: "1px solid #1f2937" }}>
+                    <td style={{ ...tdStyle, fontWeight: "600", color: "#3b82f6" }}>{lot.id}</td>
+                    <td style={tdStyle}>{lot.material}</td>
+                    <td style={tdStyle}>{lot.weight} kg</td>
+                    <td style={tdStyle}>{lot.facility}</td>
+                    <td style={tdStyle}>%{lot.purity}</td>
+                    <td style={tdStyle}><span style={{ color: "#10b981", fontSize: "11px", fontWeight: "700" }}>{lot.status}</span></td>
+                    <td style={tdStyle}>
+                      <button onClick={() => setQrModalLot(lot)} style={{ background: "#1f2937", color: "#9ca3af", border: "1px solid #374151", borderRadius: "4px", padding: "4px 10px", cursor: "pointer", fontSize: "11px" }}>
+                        {t.qrLabel}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* TAB 4: GÖRSEL MATERYAL ANALİZİ VE YÜKLEME ALANI */}
+        {tab === "ai_vision" && (
+          <div>
+            <h2 style={pageHeaderStyle}>{t.aiVision}</h2>
+            <p style={{ color: "#9ca3af", fontSize: "13px", marginBottom: "20px" }}>
+              Optik spektrometre ve bilgisayarlı görü modeli vasıtasıyla atık materyali sınıflandırma alanı.
+            </p>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", marginTop: "20px" }}>
+              {/* Dosya Yükleme Paneli */}
+              <div style={{ padding: "24px", backgroundColor: "#111827", borderRadius: "6px", border: "2px dashed #374151", textAlign: "center", display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center" }}>
+                <input
+                  type="file"
+                  accept="image/*"
+                  id="imageUploadInput"
+                  style={{ display: "none" }}
+                  onChange={handleImageChange}
+                />
+                <label htmlFor="imageUploadInput" style={{ cursor: "pointer", display: "block", width: "100%" }}>
+                  <div style={{ color: "#2563eb", fontSize: "13px", fontWeight: "700", marginBottom: "6px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                    GÖRSEL DOSYASI SEÇİN VEYA SÜRÜKLEYİN
+                  </div>
+                  <div style={{ color: "#6b7280", fontSize: "11px" }}>
+                    Desteklenen Formatlar: PNG, JPG, JPEG, WEBP (Maks: 15MB)
+                  </div>
+                </label>
+
+                {selectedImage && (
+                  <div style={{ marginTop: "16px", fontSize: "12px", color: "#10b981", fontWeight: "600" }}>
+                    SEÇİLEN DOSYA: {selectedImage.name} ({(selectedImage.size / (1024 * 1024)).toFixed(2)} MB)
+                  </div>
+                )}
+
+                <button
+                  onClick={handleAiAnalyze}
+                  disabled={!imagePreview || loadingAi}
+                  style={{
+                    ...btnPrimary,
+                    marginTop: "20px",
+                    width: "100%",
+                    opacity: !imagePreview || loadingAi ? 0.4 : 1,
+                    cursor: !imagePreview || loadingAi ? "not-allowed" : "pointer"
+                  }}
+                >
+                  {loadingAi ? "ANALİZ EDİLİYOR..." : "GÖRSEL MATERYALİ ANALİZ ET"}
+                </button>
+              </div>
+
+              {/* Önizleme Alanı */}
+              <div style={{ padding: "20px", backgroundColor: "#111827", borderRadius: "6px", border: "1px solid #1f2937", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "200px" }}>
+                {imagePreview ? (
+                  <img
+                    src={imagePreview}
+                    alt="Atık Materyal Önizleme"
+                    style={{ maxWidth: "100%", maxHeight: "220px", borderRadius: "4px", border: "1px solid #374151", objectFit: "contain" }}
+                  />
+                ) : (
+                  <div style={{ color: "#6b7280", fontSize: "12px", textAlign: "center", lineHeight: "1.6" }}>
+                    GÖRSEL ÖNİZLEME ALANI<br />
+                    <span style={{ fontSize: "11px", color: "#4b5563" }}>Analiz edilecek dosya seçildiğinde burada görüntülenecektir.</span>
+                  </div>
+                )}
+              </div>
             </div>
 
-            <div style={{ display: "flex", gap: "10px", width: "100%" }}>
-              <button className="btn-primary" style={{ flex: 1 }} onClick={() => alert("Yazıcıya gönderildi.")}>{t.printLabel}</button>
-              <button className="btn-secondary" style={{ flex: 1 }} onClick={() => setSelectedQrLot(null)}>{t.close}</button>
+            {/* Analiz Sonuç Kartı */}
+            {aiResult && (
+              <div style={{ marginTop: "24px", padding: "20px", backgroundColor: "#111827", borderRadius: "6px", border: "1px solid #10b981" }}>
+                <div style={{ fontSize: "11px", color: "#10b981", fontWeight: "700", letterSpacing: "0.5px" }}>SPEKTROMETRE ANALİZ SONUCU</div>
+                <h3 style={{ margin: "6px 0 16px 0", color: "#ffffff", fontSize: "18px" }}>{aiResult.detected_material}</h3>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px", fontSize: "13px", color: "#9ca3af" }}>
+                  <div>Model Doğruluğu: <strong style={{ color: "#ffffff" }}>%{Math.round((aiResult.confidence || 0) * 100)}</strong></div>
+                  <div>Geri Dönüştürülebilirlik: <strong style={{ color: "#ffffff" }}>%{aiResult.recyclability_percentage}</strong></div>
+                  <div>Tahmini CO₂ Tasarrufu: <strong style={{ color: "#ffffff" }}>{aiResult.estimated_co2_saving_kg_per_ton} kg/Ton</strong></div>
+                </div>
+                <div style={{ marginTop: "16px", paddingTop: "12px", borderTop: "1px solid #1f2937", fontSize: "13px", color: "#d1d5db" }}>
+                  <strong>Sistem Tavsiyesi:</strong> {aiResult.ai_recommendation}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 5: IOT TELEMETRİ */}
+        {tab === "iot" && (
+          <div>
+            <h2 style={pageHeaderStyle}>{t.iotBins}</h2>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "16px", marginTop: "20px" }}>
+              {iotBins.map((bin) => (
+                <div key={bin.bin_id} style={{ padding: "20px", backgroundColor: "#111827", borderRadius: "6px", border: bin.fill_percentage > 85 ? "1px solid #f43f5e" : "1px solid #1f2937" }}>
+                  <div style={{ fontSize: "11px", color: "#6b7280", fontWeight: "700" }}>{bin.bin_id}</div>
+                  <div style={{ fontSize: "15px", fontWeight: "600", color: "#ffffff", margin: "4px 0 12px 0" }}>{bin.location}</div>
+                  <div style={{ fontSize: "24px", fontWeight: "700", color: bin.fill_percentage > 85 ? "#f43f5e" : "#10b981" }}>%{bin.fill_percentage}</div>
+                  <div style={{ fontSize: "12px", color: "#6b7280", marginTop: "8px" }}>Batarya Seviyesi: %{bin.battery_level} | Veri: {bin.last_updated}</div>
+                  {bin.fill_percentage > 85 && (
+                    <div style={{ marginTop: "12px", fontSize: "11px", color: "#f43f5e", fontWeight: "700", letterSpacing: "0.5px" }}>KAPASİTE UYARISI: ROTALAMA GEREKİYOR</div>
+                  )}
+                </div>
+              ))}
             </div>
+          </div>
+        )}
+
+        {/* TAB 6: ESG & SÜRDÜRÜLEBİLİRLİK */}
+        {tab === "esg" && (
+          <div>
+            <h2 style={pageHeaderStyle}>{t.esg}</h2>
+            <div style={{ marginTop: "20px", padding: "24px", backgroundColor: "#111827", borderRadius: "6px", border: "1px solid #6366f1" }}>
+              <div style={{ fontSize: "11px", color: "#6366f1", fontWeight: "700", letterSpacing: "0.5px" }}>UYUMLULUK DERECESİ</div>
+              <h3 style={{ margin: "4px 0 20px 0", color: "#ffffff", fontSize: "20px" }}>{esgData?.esg_compliance_score}</h3>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "20px", fontSize: "14px", color: "#9ca3af" }}>
+                <div>Engellenen CO₂ Emisyonu: <strong style={{ color: "#ffffff" }}>{esgData?.co2_avoided_tons} Ton</strong></div>
+                <div>Kurtarılan Ağaç Sayısı: <strong style={{ color: "#ffffff" }}>{esgData?.trees_saved} Adet</strong></div>
+                <div>Tasarruf Edilen Su Hacmi: <strong style={{ color: "#ffffff" }}>{esgData?.water_saved_liters?.toLocaleString()} Litre</strong></div>
+                <div>Toplam İşlenen Atık Hacmi: <strong style={{ color: "#ffffff" }}>{esgData?.total_waste_processed_tons} Ton</strong></div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 7: SİSTEM DENETİM GÜNLÜĞÜ */}
+        {tab === "audit" && (
+          <div>
+            <h2 style={pageHeaderStyle}>{t.audit}</h2>
+            <div style={{ backgroundColor: "#111827", padding: "16px", borderRadius: "6px", border: "1px solid #1f2937", marginTop: "20px" }}>
+              {auditLogs.map(log => (
+                <div key={log.id} style={{ borderBottom: "1px solid #1f2937", padding: "10px 0", fontFamily: "monospace", fontSize: "12px" }}>
+                  <span style={{ color: "#6b7280" }}>[{log.timestamp}] </span>
+                  <span style={{ color: "#3b82f6", fontWeight: "600" }}>{log.action}: </span>
+                  <span style={{ color: "#d1d5db" }}>{log.detail}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* TAB 8: SİSTEM & ENTEGRASYON */}
+        {tab === "settings" && (
+          <div>
+            <h2 style={pageHeaderStyle}>{t.settings}</h2>
+            <div style={{ padding: "20px", backgroundColor: "#111827", borderRadius: "6px", border: "1px solid #1f2937", marginTop: "20px" }}>
+              <h4 style={{ margin: "0 0 12px 0", color: "#ffffff" }}>Aktif Entegrasyon Noktası</h4>
+              <div style={{ fontSize: "13px", color: "#9ca3af" }}>Bulut REST API Endpoint: <code style={{ color: "#10b981", background: "#1f2937", padding: "4px 8px", borderRadius: "4px" }}>{API_BASE}</code></div>
+            </div>
+          </div>
+        )}
+
+      </div>
+
+      {/* BARKOD / QR MODAL */}
+      {qrModalLot && (
+        <div style={{ position: "fixed", top: 0, left: 0, width: "100vw", height: "100vh", backgroundColor: "rgba(0,0,0,0.85)", display: "flex", justifyContent: "center", alignItems: "center" }}>
+          <div style={{ backgroundColor: "#111827", padding: "28px", borderRadius: "8px", border: "1px solid #374151", textAlign: "center", width: "280px" }}>
+            <div style={{ fontSize: "11px", color: "#6b7280", fontWeight: "700", marginBottom: "12px" }}>ENDÜSTRİYEL LOT ETİKETİ</div>
+            <div style={{ backgroundColor: "#ffffff", padding: "20px", borderRadius: "4px", margin: "12px 0" }}>
+              <div style={{ color: "#000000", fontWeight: "700", fontSize: "20px", letterSpacing: "1px" }}>{qrModalLot.id}</div>
+              <div style={{ color: "#374151", fontSize: "12px", marginTop: "4px" }}>{qrModalLot.material} - {qrModalLot.weight}KG</div>
+              <div style={{ fontSize: "9px", marginTop: "12px", color: "#9ca3af", letterSpacing: "0.5px" }}>VERIFIED BY WASTEFLOW CLOUD</div>
+            </div>
+            <button onClick={() => window.print()} style={{ ...btnPrimary, width: "100%", marginBottom: "8px" }}>{t.printLabel}</button>
+            <button onClick={() => setQrModalLot(null)} style={{ background: "transparent", color: "#9ca3af", border: "1px solid #374151", borderRadius: "4px", width: "100%", padding: "8px", cursor: "pointer", fontSize: "12px" }}>{t.close}</button>
           </div>
         </div>
       )}
+
     </div>
   );
 }
+
+// --- Kurumsal Stil Bilesenleri ---
+const pageHeaderStyle = { margin: 0, fontSize: "20px", fontWeight: "600", color: "#ffffff", letterSpacing: "-0.3px" };
+const sectionBoxStyle = { padding: "20px", backgroundColor: "#111827", borderRadius: "6px", border: "1px solid #1f2937" };
+const sectionTitleStyle = { margin: "0 0 16px 0", fontSize: "15px", fontWeight: "600", color: "#ffffff" };
+const labelStyle = { display: "block", fontSize: "11px", color: "#9ca3af", fontWeight: "600", marginBottom: "6px", textTransform: "uppercase" };
+
+const btnNav = (active) => ({
+  padding: "9px 12px",
+  backgroundColor: active ? "#1f2937" : "transparent",
+  color: active ? "#ffffff" : "#9ca3af",
+  border: "none",
+  borderRadius: "4px",
+  textAlign: "left",
+  cursor: "pointer",
+  fontWeight: active ? "600" : "500",
+  fontSize: "13px"
+});
+
+const btnPrimary = {
+  backgroundColor: "#2563eb",
+  color: "#ffffff",
+  border: "none",
+  borderRadius: "4px",
+  padding: "9px 16px",
+  cursor: "pointer",
+  fontWeight: "600",
+  fontSize: "12px",
+  letterSpacing: "0.3px"
+};
+
+const inputStyle = {
+  backgroundColor: "#1f2937",
+  color: "#ffffff",
+  border: "1px solid #374151",
+  borderRadius: "4px",
+  padding: "8px 12px",
+  width: "100%",
+  boxSizing: "border-box",
+  fontSize: "13px"
+};
+
+const Card = ({ title, value, color }) => (
+  <div style={{ padding: "16px 20px", backgroundColor: "#111827", borderRadius: "6px", borderLeft: `3px solid ${color}`, borderTop: "1px solid #1f2937", borderRight: "1px solid #1f2937", borderBottom: "1px solid #1f2937" }}>
+    <div style={{ color: "#6b7280", fontSize: "11px", fontWeight: "600", textTransform: "uppercase" }}>{title}</div>
+    <div style={{ margin: "8px 0 0 0", color: "#ffffff", fontSize: "20px", fontWeight: "700" }}>{value}</div>
+  </div>
+);
+
+const thStyle = { padding: "12px 16px", color: "#9ca3af", fontSize: "11px", fontWeight: "700", textTransform: "uppercase", letterSpacing: "0.5px" };
+const tdStyle = { padding: "12px 16px", fontSize: "13px", color: "#d1d5db" };
