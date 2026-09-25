@@ -96,6 +96,44 @@ ipcMain.handle('open-image', async () => {
   };
 });
 
+async function fetchJson(url) {
+  const res = await fetch(url, { cache: 'no-store', redirect: 'follow' });
+  if (!res.ok) throw new Error(String(res.status));
+  return res.json();
+}
+
+function tcmbSelling(xml, code) {
+  const parts = xml.split(`Kod="${code}"`);
+  if (parts.length < 2) return null;
+  const match = parts[1].match(/<ForexSelling>([0-9.]+)</);
+  return match ? Number(match[1]) : null;
+}
+
+ipcMain.handle('fetch-fx', async () => {
+  try {
+    const xml = await (await fetch('https://www.tcmb.gov.tr/kurlar/today.xml', { cache: 'no-store' })).text();
+    const usdTry = tcmbSelling(xml, 'USD');
+    const eurTry = tcmbSelling(xml, 'EUR');
+    if (usdTry && eurTry) return { usdTry, eurTry, source: 'TCMB' };
+  } catch {
+    /* next */
+  }
+  try {
+    const usd = await fetchJson('https://api.frankfurter.dev/v1/latest?from=USD&to=TRY');
+    const eur = await fetchJson('https://api.frankfurter.dev/v1/latest?from=EUR&to=TRY');
+    if (usd?.rates?.TRY && eur?.rates?.TRY) {
+      return { usdTry: usd.rates.TRY, eurTry: eur.rates.TRY, source: 'ECB / frankfurter' };
+    }
+  } catch {
+    /* next */
+  }
+  const data = await fetchJson('https://open.er-api.com/v6/latest/USD');
+  const usdTry = data?.rates?.TRY;
+  const eurPerUsd = data?.rates?.EUR;
+  if (!usdTry || !eurPerUsd) throw new Error('fx-failed');
+  return { usdTry, eurTry: usdTry / eurPerUsd, source: 'open.er-api.com' };
+});
+
 app.whenReady().then(() => {
   const { session } = require("electron");
   session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {

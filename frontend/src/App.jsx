@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import "./styles.css";
 import { classifyWasteImage } from "./classifyWasteImage.js";
@@ -368,28 +368,23 @@ export default function App() {
     if (isLoggedIn && !canAccess(user.role, tab)) setTab(defaultTab(user.role));
   }, [isLoggedIn, user.role, tab]);
 
-  useEffect(() => {
-    let cancelled = false;
-    const pull = async () => {
-      setFxBusy(true);
-      try {
-        const next = await fetchLiveFx();
-        if (!cancelled) setFx(next);
-      } catch {
-        if (!cancelled) {
-          setFx((prev) => (prev ? { ...prev, live: false } : prev));
-        }
-      } finally {
-        if (!cancelled) setFxBusy(false);
-      }
-    };
-    pull();
-    const timer = setInterval(pull, 45000);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
+  const refreshFx = useCallback(async () => {
+    setFxBusy(true);
+    try {
+      const next = await fetchLiveFx();
+      setFx(next);
+    } catch {
+      setFx((prev) => (prev ? { ...prev, live: false } : prev));
+    } finally {
+      setFxBusy(false);
+    }
   }, []);
+
+  useEffect(() => {
+    refreshFx();
+    const timer = setInterval(refreshFx, 30000);
+    return () => clearInterval(timer);
+  }, [refreshFx]);
 
   useEffect(() => {
     const onArrivals = (arrivals) => {
@@ -1063,9 +1058,12 @@ export default function App() {
             <span style={{ color: "#444444", fontSize: "11px", fontWeight: "600", letterSpacing: "0.5px" }}>{serverLive ? t.connected : "YEREL KAYIT AKTİF"}</span>
           </a>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
-            <span style={{ fontSize: 11, color: fx?.live ? "#111111" : "#111111" }}>
-              {fx?.usdTry ? `USD ${Number(fx.usdTry).toFixed(2)} ₺` : "kur —"} · {fx?.eurTry ? `EUR ${Number(fx.eurTry).toFixed(2)} ₺` : ""}
+            <span style={{ fontSize: 11, color: fx?.live ? "#1B6B4A" : "#C62828", fontWeight: 700 }}>
+              {fxBusy ? "KUR GÜNCELLENİYOR" : fx?.live ? "CANLI KUR" : "KUR ÖNBELLEK"}
+              {fx?.usdTry ? ` · USD ${Number(fx.usdTry).toFixed(4)} ₺` : " · kur —"}
+              {fx?.eurTry ? ` · EUR ${Number(fx.eurTry).toFixed(4)} ₺` : ""}
             </span>
+            <button type="button" onClick={refreshFx} disabled={fxBusy} style={{ ...linkBtn, padding: "3px 8px" }}>Kurları yenile</button>
             {inboxUnread > 0 && <button type="button" onClick={() => setTab("inbox")} style={linkBtn}>Depo {inboxUnread}</button>}
             {siteUnread > 0 && <button type="button" onClick={() => setTab("siteInbox")} style={linkBtn}>Toplama {siteUnread}</button>}
             {managerUnread > 0 && <button type="button" onClick={() => setTab("managers")} style={linkBtn}>Müdür {managerUnread}</button>}
@@ -2184,8 +2182,8 @@ export default function App() {
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginTop: 20 }}>
               <div style={sectionBoxStyle}>
-                <div style={{ fontSize: 11, color: fx?.live ? "#111111" : "#111111", fontWeight: 700 }}>
-                  {fx?.live ? "CANLI KUR" : "SON BİLİNEN KUR"}
+                <div style={{ fontSize: 11, color: fx?.live ? "#1B6B4A" : "#C62828", fontWeight: 700 }}>
+                  {fx?.live ? "CANLI KUR · TCMB / ECB" : "SON BİLİNEN KUR"}
                   {fxBusy ? " · güncelleniyor" : ""}
                 </div>
                 <div style={{ fontSize: 22, fontWeight: 700, color: "#111111", marginTop: 8 }}>
@@ -2194,12 +2192,12 @@ export default function App() {
                 <div style={{ fontSize: 12, color: "#444444", marginTop: 6 }}>{fx?.source || "kaynak bekleniyor"}</div>
               </div>
               <div style={sectionBoxStyle}>
-                <div style={{ fontSize: 11, color: fx?.live ? "#111111" : "#111111", fontWeight: 700 }}>CANLI KUR</div>
+                <div style={{ fontSize: 11, color: fx?.live ? "#1B6B4A" : "#C62828", fontWeight: 700 }}>{fx?.live ? "CANLI KUR" : "SON BİLİNEN KUR"}</div>
                 <div style={{ fontSize: 22, fontWeight: 700, color: "#111111", marginTop: 8 }}>
                   1 EUR = {fx?.eurTry ? Number(fx.eurTry).toLocaleString("tr-TR", { minimumFractionDigits: 4, maximumFractionDigits: 4 }) : "—"} ₺
                 </div>
                 <div style={{ fontSize: 12, color: "#444444", marginTop: 6 }}>
-                  {fx?.updatedAt ? new Date(fx.updatedAt).toLocaleString("tr-TR") : "henüz çekilmedi"} · 45 sn
+                  {fx?.updatedAt ? new Date(fx.updatedAt).toLocaleString("tr-TR") : "henüz çekilmedi"} · 30 sn · {fx?.source || ""}
                 </div>
               </div>
               <div style={sectionBoxStyle}>

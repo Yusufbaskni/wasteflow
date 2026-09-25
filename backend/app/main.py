@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.classifier import classify_image_bytes
+from app.fx import fetch_live_fx
 from app.schemas import VisualAnalysisResponse
 
 try:
@@ -158,6 +159,14 @@ def serialize_lot(lot: WasteLotModel) -> dict:
 @app.get("/health")
 def health():
     return {"ok": True}
+
+
+@app.get("/api/v1/fx")
+def live_fx():
+    try:
+        return fetch_live_fx()
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Canlı kur alınamadı: {exc}") from exc
 
 
 @app.post("/api/v1/auth/login")
