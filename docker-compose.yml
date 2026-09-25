@@ -1,0 +1,15 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: wasteflow
+      POSTGRES_USER: wasteflow
+      POSTGRES_PASSWORD: wasteflow
+    ports:
+      - "5432:5432"
+    volumes:
+      - wf_pg:/var/lib/postgresql/data
+      - ./sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+
+volumes:
+  wf_pg:
