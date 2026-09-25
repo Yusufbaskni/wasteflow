@@ -29,3 +29,11 @@ class AuditLogModel(Base):
     action = Column(String)
     detail = Column(String)
     timestamp = Column(DateTime, default=datetime.utcnow)
+
+class UserModel(Base):
+    __tablename__ = "users"
+
+    username = Column(String, primary_key=True, index=True)
+    password_hash = Column(String, nullable=False)
+    name = Column(String, nullable=False)
+    role = Column(String, nullable=False, default="Operatör")

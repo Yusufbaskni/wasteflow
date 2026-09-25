@@ -1,14 +1,25 @@
+import os
 from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import declarative_base, sessionmaker
 
-SQLALCHEMY_DATABASE_URL = "sqlite:///./wasteflow.db"
+# Render / Supabase varsayılan olarak 'postgres://' verebilir, SQLAlchemy 2.0+ 'postgresql://' ister.
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./wasteflow.db")
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+# SQLite ve PostgreSQL bağlantı parametreleri ayrımı
+connect_args = {}
+if DATABASE_URL.startswith("sqlite"):
+    connect_args = {"check_same_thread": False}
 
 engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
+    DATABASE_URL,
+    connect_args=connect_args,
+    pool_pre_ping=True,  # Kopan veritabanı bağlantılarını otomatik yeniler
+    pool_recycle=300
 )
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 def get_db():

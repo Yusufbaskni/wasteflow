@@ -1,17 +1,25 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File, Depends
-from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
-from pydantic import BaseModel
+import hashlib
+import hmac
+import os
+import secrets
 from typing import List, Optional
-from datetime import datetime
-from PIL import Image
-import numpy as np
-import io
 
-from .database import engine, Base, get_db
-from .models import WasteLotModel, IoTBinModel, AuditLogModel
+from fastapi import Depends, File, HTTPException, UploadFile
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
-# Veritabanı tablolarını otomatik oluştur
+from app.classifier import classify_image_bytes
+from app.schemas import VisualAnalysisResponse
+
+try:
+    from .database import engine, Base, get_db
+    from .models import WasteLotModel, IoTBinModel, AuditLogModel, UserModel
+except ImportError:
+    from database import engine, Base, get_db
+    from models import WasteLotModel, IoTBinModel, AuditLogModel, UserModel
+
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="WasteFlow Enterprise Real API", version="2.0.0")
@@ -24,157 +32,282 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Başlangıç Varsayılan Verilerini Yükle
+DEMO_PASSWORD = os.getenv("WASTEFLOW_DEMO_PASSWORD", "Istinye2026")
+
+
+def hash_password(password: str) -> str:
+    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+
+
+def add_audit(db: Session, action: str, detail: str):
+    db.add(AuditLogModel(action=action, detail=detail))
+
+
 def seed_initial_data(db: Session):
-    if db.query(IoTBinModel).count() == 0:
-        bins = [
-            IoTBinModel(bin_id="BIN-101", location="Bahçelievler Tesis A", fill_percentage=88.5, battery_level=92.0, last_updated="Şimdi"),
-            IoTBinModel(bin_id="BIN-102", location="İstinye Toplama Noktası", fill_percentage: 42.0, battery_level=78.5, last_updated="5 dk önce"),
-            IoTBinModel(bin_id="BIN-103", location="Zeytinburnu Aktarma", fill_percentage=94.2, battery_level=64.0, last_updated="Şimdi")
+    if db.query(UserModel).count() >= 0:
+        demo_users = [
+            ("yusuf.baskan", DEMO_PASSWORD, "Yusuf Başkan", "Sistem Yöneticisi"),
+            ("operator", "Operator2026", "Saha Operatörü", "Operatör"),
+            ("yonetici", "Yonetici2026", "Tesis Yöneticisi", "Yönetici"),
         ]
-        db.add_all(bins)
+        for username, password, name, role in demo_users:
+            if not db.query(UserModel).filter(UserModel.username == username).first():
+                db.add(UserModel(username=username, password_hash=hash_password(password), name=name, role=role))
         db.commit()
 
-    if db.query(WasteLotModel).count() == 0:
-        lots = [
-            WasteLotModel(id="LOT-8941", material="PET Plastik", weight_kg=450.0, facility="FAC-01 (Topkapı)", purity=94.5, status="İŞLENDİ"),
-            WasteLotModel(id="LOT-8942", material="Oluklu Mukavva", weight_kg=1200.0, facility="FAC-02 (Zeytinburnu)", purity=89.0, status="ROTALANDI"),
-            WasteLotModel(id="LOT-8943", material="Tehlikeli Kimyasal Atık", weight_kg=310.0, facility="FAC-03 (Bahçelievler)", purity=98.2, status="KARANTİNADA")
-        ]
-        db.add_all(lots)
-        db.commit()
+    bins = [
+        ("BIN-101", "FAC-01 Topkapı Deposu", 86.4, 91.0, "4 dk önce"),
+        ("BIN-102", "FAC-02 Zeytinburnu Deposu", 41.8, 77.0, "11 dk önce"),
+        ("BIN-103", "FAC-03 Bahçelievler Deposu", 91.7, 63.0, "1 dk önce"),
+        ("BIN-104", "FAC-04 İstinye Deposu", 63.2, 82.0, "8 dk önce"),
+        ("BIN-105", "FAC-05 Küçükçekmece Deposu", 74.1, 68.0, "6 dk önce"),
+    ]
+    for bin_id, location, fill, battery, updated in bins:
+        row = db.query(IoTBinModel).filter(IoTBinModel.bin_id == bin_id).first()
+        if row:
+            row.fill_percentage = fill
+            row.battery_level = battery
+            row.last_updated = updated
+        else:
+            db.add(IoTBinModel(bin_id=bin_id, location=location, fill_percentage=fill, battery_level=battery, last_updated=updated))
+    db.commit()
+
+    lots = [
+        ("LOT-8928", "Oluklu Mukavva", 1840.0, "FAC-02 (Zeytinburnu)", 91.2, "İŞLENDİ"),
+        ("LOT-8931", "Hurda Demir / Çelik", 1260.0, "FAC-01 (Topkapı)", 88.6, "İŞLENDİ"),
+        ("LOT-8934", "PET Plastik", 612.0, "FAC-01 (Topkapı)", 93.8, "İŞLENDİ"),
+        ("LOT-8936", "Cam Ambalaj", 940.0, "FAC-04 (İstinye)", 95.4, "İŞLENDİ"),
+        ("LOT-8938", "HDPE Plastik", 428.0, "FAC-05 (Küçükçekmece)", 90.1, "İŞLENDİ"),
+        ("LOT-8940", "Beyaz Kağıt / Karton", 736.0, "FAC-02 (Zeytinburnu)", 87.9, "İŞLENDİ"),
+        ("LOT-8941", "PET Plastik", 468.0, "FAC-01 (Topkapı)", 94.2, "İŞLENDİ"),
+        ("LOT-8942", "Oluklu Mukavva", 1520.0, "FAC-02 (Zeytinburnu)", 89.4, "ROTALANDI"),
+        ("LOT-8943", "Tehlikeli Kimyasal Atık", 186.0, "FAC-03 (Bahçelievler)", 71.4, "KARANTİNADA"),
+        ("LOT-8944", "Cam Ambalaj", 812.0, "FAC-04 (İstinye)", 96.3, "TESLİM EDİLDİ"),
+        ("LOT-8945", "HDPE Plastik", 574.0, "FAC-05 (Küçükçekmece)", 88.7, "ROTALANDI"),
+        ("LOT-8946", "LDPE Film / Naylon", 390.0, "FAC-01 (Topkapı)", 86.5, "ALINDI"),
+        ("LOT-8947", "Elektronik Atık (WEEE)", 142.0, "FAC-03 (Bahçelievler)", 82.1, "ALINDI"),
+        ("LOT-8948", "Organik / Gıda Atığı", 318.0, "FAC-04 (İstinye)", 84.6, "YENİ KAYIT"),
+        ("LOT-8949", "Lastik / Kauçuk", 960.0, "FAC-05 (Küçükçekmece)", 90.8, "YENİ KAYIT"),
+        ("LOT-8950", "Alüminyum Ambalaj", 214.0, "FAC-01 (Topkapı)", 92.7, "ROTALANDI"),
+        ("LOT-8951", "Ahşap Palet", 1080.0, "FAC-02 (Zeytinburnu)", 85.3, "İŞLENDİ"),
+        ("LOT-8952", "Tekstil / Elyaf", 445.0, "FAC-02 (Zeytinburnu)", 83.8, "TESLİM EDİLDİ"),
+        ("LOT-8953", "PP Plastik", 336.0, "FAC-05 (Küçükçekmece)", 89.9, "ALINDI"),
+        ("LOT-8954", "Elektronik Atık (WEEE)", 98.0, "FAC-03 (Bahçelievler)", 80.4, "İŞLENDİ"),
+        ("LOT-8955", "Karışık Ambalaj", 672.0, "FAC-01 (Topkapı)", 78.2, "YENİ KAYIT"),
+        ("LOT-8956", "Organik / Gıda Atığı", 254.0, "FAC-04 (İstinye)", 86.1, "İŞLENDİ"),
+        ("LOT-8957", "Hurda Demir / Çelik", 890.0, "FAC-01 (Topkapı)", 87.4, "ROTALANDI"),
+        ("LOT-8958", "Tehlikeli Kimyasal Atık", 64.0, "FAC-03 (Bahçelievler)", 68.9, "KARANTİNADA"),
+    ]
+    for lot_id, material, weight, facility, purity, status in lots:
+        row = db.query(WasteLotModel).filter(WasteLotModel.id == lot_id).first()
+        if row:
+            row.material = material
+            row.weight_kg = weight
+            row.facility = facility
+            row.purity = purity
+            row.status = status
+        else:
+            db.add(WasteLotModel(id=lot_id, material=material, weight_kg=weight, facility=facility, purity=purity, status=status))
+    db.commit()
+
 
 @app.on_event("startup")
 def startup_event():
     db = next(get_db())
     seed_initial_data(db)
 
-# Pydantic Şemaları
+
 class LotCreateSchema(BaseModel):
     id: str
     material: str
     weight_kg: float
     facility: str
     purity: float
+    status: Optional[str] = "YENİ KAYIT"
 
-# 1. GERÇEK PIKSEL & SPEKTROMETRE GÖRSEL ANALİZİ
+
+class LotPatchSchema(BaseModel):
+    material: Optional[str] = None
+    weight_kg: Optional[float] = None
+    facility: Optional[str] = None
+    purity: Optional[float] = None
+    status: Optional[str] = None
+
+
+class LoginSchema(BaseModel):
+    username: str
+    password: str
+
+
+class RouteRequest(BaseModel):
+    lot_ids: Optional[List[str]] = None
+
+
+def serialize_lot(lot: WasteLotModel) -> dict:
+    return {
+        "id": lot.id,
+        "material": lot.material,
+        "weight": lot.weight_kg,
+        "weight_kg": lot.weight_kg,
+        "facility": lot.facility,
+        "purity": lot.purity,
+        "status": lot.status,
+    }
+
+
+@app.get("/health")
+def health():
+    return {"ok": True}
+
+
+@app.post("/api/v1/auth/login")
+def login(payload: LoginSchema, db: Session = Depends(get_db)):
+    user = db.query(UserModel).filter(UserModel.username == payload.username.strip().lower()).first()
+    if not user or not hmac.compare_digest(user.password_hash, hash_password(payload.password)):
+        raise HTTPException(status_code=401, detail="Kullanıcı adı veya parola hatalı.")
+    add_audit(db, "LOGIN", f"{user.username} oturum açtı.")
+    db.commit()
+    return {
+        "token": secrets.token_urlsafe(24),
+        "name": user.name,
+        "role": user.role,
+        "username": user.username,
+    }
+
+
 @app.post("/api/v1/ai/classify")
 async def classify_waste_image(file: Optional[UploadFile] = File(None)):
     if not file:
-        return {
-            "detected_material": "Polimer Kompozit (Varsayılan)",
-            "confidence": 0.92,
-            "recyclability_percentage": 90.0,
-            "estimated_co2_saving_kg_per_ton": 2100,
-            "ai_recommendation": "Varsayılan analiz tamamlandı."
-        }
-
+        raise HTTPException(status_code=400, detail="Analiz için görsel dosyası gerekli.")
     contents = await file.read()
-    image = Image.open(io.BytesIO(contents)).convert("RGB")
-    img_np = np.array(image)
+    if not contents:
+        raise HTTPException(status_code=400, detail="Boş dosya yüklenemez.")
+    try:
+        return classify_image_bytes(contents)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Görsel analiz edilemedi: {exc}") from exc
 
-    # Gerçek piksel matrisi analizi (Renk spektrumu ve ortalamalar)
-    r_mean = float(np.mean(img_np[:, :, 0]))
-    g_mean = float(np.mean(img_np[:, :, 1]))
-    b_mean = float(np.mean(img_np[:, :, 2]))
-    brightness = float(np.mean(img_np))
-    std_dev = float(np.std(img_np))
 
-    # Piksel özelliklerine göre materyal sınıflandırması
-    if brightness > 180 and std_dev < 40:
-        material = "Oluklu Mukavva / Kağıt Ambalaj"
-        co2_factor = 1.8
-        recyclability = 91.5
-    elif b_mean > r_mean and b_mean > g_mean:
-        material = "PET Plastik (Mavi/Şeffaf Polimer)"
-        co2_factor = 2.45
-        recyclability = 94.2
-    elif g_mean > r_mean and g_mean > b_mean:
-        material = "Cam Ambalaj (Yeşil/Endüstriyel)"
-        co2_factor = 0.85
-        recyclability = 98.0
-    elif std_dev > 65:
-        material = "HDPE / Karışık Sert Plastik"
-        co2_factor = 2.10
-        recyclability = 87.6
-    else:
-        material = "Endüstriyel Polimer Kompozit"
-        co2_factor = 2.30
-        recyclability = 89.0
-
-    confidence = round(min(0.99, max(0.85, (std_dev / 100.0) + 0.5)), 2)
-
-    return {
-        "detected_material": material,
-        "confidence": confidence,
-        "recyclability_percentage": recyclability,
-        "estimated_co2_saving_kg_per_ton": int(co2_factor * 1000),
-        "ai_recommendation": f"Piksel matris analizi doğrulandı. Yüksek saflık oranı (%{recyclability}). Doğrudan Geri Dönüşüm Hattı B tesisine işlenebilir."
-    }
-
-# 2. DİNAMİK METRİKLER (Veritabanından Gerçek Toplamlar)
 @app.get("/api/v1/analytics/metrics")
 def get_metrics(db: Session = Depends(get_db)):
     total_lots = db.query(WasteLotModel).all()
-    total_weight = sum(lot.weight_kg for lot in total_lots)
-    
-    recycled = sum(lot.weight_kg for lot in total_lots if lot.status == "İŞLENDİ")
-    reused = sum(lot.weight_kg for lot in total_lots if lot.status == "ROTALANDI")
-    landfilled = sum(lot.weight_kg for lot in total_lots if lot.status == "KARANTİNADA")
-
+    total_weight = sum(lot.weight_kg or 0 for lot in total_lots)
+    recycled = sum(lot.weight_kg or 0 for lot in total_lots if lot.status == "İŞLENDİ")
+    reused = sum(lot.weight_kg or 0 for lot in total_lots if lot.status == "ROTALANDI")
+    landfilled = sum(lot.weight_kg or 0 for lot in total_lots if lot.status == "KARANTİNADA")
     circularity = round(((recycled + reused) / total_weight * 100), 1) if total_weight > 0 else 0.0
-
     return {
         "circularity_rate": circularity,
         "recycled_tons": round(recycled / 1000.0, 2),
         "reused_tons": round(reused / 1000.0, 2),
-        "landfilled_tons": round(landfilled / 1000.0, 2)
+        "landfilled_tons": round(landfilled / 1000.0, 2),
     }
 
-# 3. DİNAMİK ESG RAPORU (IPCC / EPA Katsayıları)
+
 @app.get("/api/v1/esg/report")
 def get_esg_report(db: Session = Depends(get_db)):
     total_lots = db.query(WasteLotModel).all()
-    total_kg = sum(lot.weight_kg for lot in total_lots)
+    total_kg = sum(lot.weight_kg or 0 for lot in total_lots)
     total_tons = total_kg / 1000.0
-
-    co2_avoided = round(total_tons * 2.3, 2)
-    trees_saved = int(total_tons * 14)
-    water_saved = round(total_tons * 31500, 0)
-
     return {
         "total_waste_processed_tons": round(total_tons, 2),
-        "co2_avoided_tons": co2_avoided,
-        "trees_saved": trees_saved,
-        "water_saved_liters": water_saved,
-        "esg_compliance_score": "AA+ (GRI & CSRD Uyumlu Veritabanı)"
+        "co2_avoided_tons": round(total_tons * 2.3, 2),
+        "trees_saved": int(total_tons * 14),
+        "water_saved_liters": round(total_tons * 31500, 0),
+        "esg_compliance_score": "AA+ (GRI & CSRD Uyumlu Veritabanı)",
     }
 
-# 4. GERÇEK LOT ENVANTERİ VE OLUŞTURMA
+
 @app.get("/api/v1/lots")
 def get_lots(db: Session = Depends(get_db)):
-    return db.query(WasteLotModel).order_by(WasteLotModel.created_at.desc()).all()
+    return [serialize_lot(lot) for lot in db.query(WasteLotModel).order_by(WasteLotModel.created_at.desc()).all()]
+
 
 @app.post("/api/v1/lots")
 def create_lot(lot: LotCreateSchema, db: Session = Depends(get_db)):
+    existing = db.query(WasteLotModel).filter(WasteLotModel.id == lot.id).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="Bu LOT ID zaten kayıtlı.")
     db_lot = WasteLotModel(
         id=lot.id,
         material=lot.material,
         weight_kg=lot.weight_kg,
         facility=lot.facility,
         purity=lot.purity,
-        status="YENİ KAYIT"
+        status=lot.status or "YENİ KAYIT",
     )
     db.add(db_lot)
-    
-    # Audit Log kaydı ekle
-    log = AuditLogModel(action="LOT_CREATE", detail=f"{lot.id} veritabanına eklendi.")
-    db.add(log)
-    
+    add_audit(db, "LOT_CREATE", f"{lot.id} veritabanına eklendi.")
     db.commit()
-    return db_lot
+    db.refresh(db_lot)
+    return serialize_lot(db_lot)
 
-# 5. GERÇEK IOT BINS
+
+@app.patch("/api/v1/lots/{lot_id}")
+def patch_lot(lot_id: str, payload: LotPatchSchema, db: Session = Depends(get_db)):
+    lot = db.query(WasteLotModel).filter(WasteLotModel.id == lot_id).first()
+    if not lot:
+        raise HTTPException(status_code=404, detail="Lot bulunamadı.")
+    data = payload.model_dump(exclude_unset=True)
+    for key, value in data.items():
+        setattr(lot, key, value)
+    add_audit(db, "LOT_UPDATE", f"{lot_id} güncellendi: {data}")
+    db.commit()
+    db.refresh(lot)
+    return serialize_lot(lot)
+
+
+@app.post("/api/v1/lots/route")
+def route_lots(payload: RouteRequest, db: Session = Depends(get_db)):
+    from app.routing import recommend_facility
+
+    query = db.query(WasteLotModel)
+    if payload.lot_ids:
+        query = query.filter(WasteLotModel.id.in_(payload.lot_ids))
+    else:
+        query = query.filter(WasteLotModel.status.in_(["YENİ KAYIT", "CSV AKTARILDI"]))
+    lots = query.all()
+    if not lots:
+        raise HTTPException(status_code=400, detail="Rotalanacak yeni lot yok.")
+    updates = []
+    for lot in lots:
+        rec = recommend_facility(lot.material)
+        lot.facility = rec["facility"]
+        lot.status = "ROTALANDI"
+        updates.append({"id": lot.id, **rec})
+    add_audit(db, "AI_ROUTING_EXEC", f"{len(updates)} lot otomatik rotalandı.")
+    db.commit()
+    return {"routed": updates}
+
+
 @app.get("/api/v1/iot/bins")
 def get_iot_bins(db: Session = Depends(get_db)):
     return db.query(IoTBinModel).all()
+
+
+@app.get("/api/v1/audit")
+def get_audit(db: Session = Depends(get_db)):
+    rows = db.query(AuditLogModel).order_by(AuditLogModel.id.desc()).limit(100).all()
+    return [
+        {
+            "id": row.id,
+            "action": row.action,
+            "detail": row.detail,
+            "timestamp": row.timestamp.strftime("%H:%M:%S") if row.timestamp else "",
+        }
+        for row in rows
+    ]
+
+
+@app.post("/api/v1/analyze-image", response_model=VisualAnalysisResponse)
+async def analyze_waste_image(file: UploadFile = File(...)):
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Lütfen geçerli bir görsel dosyası yükleyin.")
+    contents = await file.read()
+    result = classify_image_bytes(contents)
+    return {
+        "primary_material": result["detected_material"],
+        "purity_score": result["recyclability_percentage"],
+        "analysis_method": result.get("analysis_method", "histogram"),
+        "detected_objects": [result["detected_material"]],
+    }

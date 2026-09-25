@@ -5,5 +5,10 @@ data/
 ml/artifacts/
 frontend/node_modules/
 frontend/dist/
+frontend/release/
+frontend/build-assets/icon.iconset/
+frontend/build-assets/extracted/
 .DS_Store
 .pytest_cache/
+*.db
+*.pt

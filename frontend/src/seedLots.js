@@ -1,0 +1,27 @@
+/** Haftalık İstanbul saha kaydı — 18–25 Eylül 2026, beş depo. */
+export const RAW_SEED_LOTS = [
+  { id: "LOT-8928", day: "18.09.2026", material: "Oluklu Mukavva", weight: 1840, facility: "FAC-02 (Zeytinburnu)", purity: 91.2, status: "İŞLENDİ", sourceId: "COL-10" },
+  { id: "LOT-8931", day: "19.09.2026", material: "Hurda Demir / Çelik", weight: 1260, facility: "FAC-01 (Topkapı)", purity: 88.6, status: "İŞLENDİ", sourceId: "COL-17" },
+  { id: "LOT-8934", day: "19.09.2026", material: "PET Plastik", weight: 612, facility: "FAC-01 (Topkapı)", purity: 93.8, status: "İŞLENDİ", sourceId: "COL-02" },
+  { id: "LOT-8936", day: "20.09.2026", material: "Cam Ambalaj", weight: 940, facility: "FAC-04 (İstinye)", purity: 95.4, status: "İŞLENDİ", sourceId: "COL-14" },
+  { id: "LOT-8938", day: "20.09.2026", material: "HDPE Plastik", weight: 428, facility: "FAC-05 (Küçükçekmece)", purity: 90.1, status: "İŞLENDİ", sourceId: "COL-04" },
+  { id: "LOT-8940", day: "22.09.2026", material: "Beyaz Kağıt / Karton", weight: 736, facility: "FAC-02 (Zeytinburnu)", purity: 87.9, status: "İŞLENDİ", sourceId: "COL-11" },
+  { id: "LOT-8941", day: "23.09.2026", material: "PET Plastik", weight: 468, facility: "FAC-01 (Topkapı)", purity: 94.2, status: "İŞLENDİ", sourceId: "COL-01" },
+  { id: "LOT-8942", day: "24.09.2026", material: "Oluklu Mukavva", weight: 1520, facility: "FAC-02 (Zeytinburnu)", purity: 89.4, status: "ROTALANDI", sourceId: "COL-09" },
+  { id: "LOT-8943", day: "24.09.2026", material: "Tehlikeli Kimyasal Atık", weight: 186, facility: "FAC-03 (Bahçelievler)", purity: 71.4, status: "KARANTİNADA", sourceId: "COL-29" },
+  { id: "LOT-8944", day: "24.09.2026", material: "Cam Ambalaj", weight: 812, facility: "FAC-04 (İstinye)", purity: 96.3, status: "TESLİM EDİLDİ", sourceId: "COL-13" },
+  { id: "LOT-8945", day: "24.09.2026", material: "HDPE Plastik", weight: 574, facility: "FAC-05 (Küçükçekmece)", purity: 88.7, status: "ROTALANDI", sourceId: "COL-03" },
+  { id: "LOT-8946", day: "24.09.2026", material: "LDPE Film / Naylon", weight: 390, facility: "FAC-01 (Topkapı)", purity: 86.5, status: "ALINDI", sourceId: "COL-07" },
+  { id: "LOT-8947", day: "24.09.2026", material: "Elektronik Atık (WEEE)", weight: 142, facility: "FAC-03 (Bahçelievler)", purity: 82.1, status: "ALINDI", sourceId: "COL-23" },
+  { id: "LOT-8948", day: "25.09.2026", material: "Organik / Gıda Atığı", weight: 318, facility: "FAC-04 (İstinye)", purity: 84.6, status: "YENİ KAYIT", sourceId: "COL-25" },
+  { id: "LOT-8949", day: "25.09.2026", material: "Lastik / Kauçuk", weight: 960, facility: "FAC-05 (Küçükçekmece)", purity: 90.8, status: "YENİ KAYIT", sourceId: "COL-27" },
+  { id: "LOT-8950", day: "25.09.2026", material: "Alüminyum Ambalaj", weight: 214, facility: "FAC-01 (Topkapı)", purity: 92.7, status: "ROTALANDI", sourceId: "COL-15" },
+  { id: "LOT-8951", day: "23.09.2026", material: "Ahşap Palet", weight: 1080, facility: "FAC-02 (Zeytinburnu)", purity: 85.3, status: "İŞLENDİ", sourceId: "COL-19" },
+  { id: "LOT-8952", day: "22.09.2026", material: "Tekstil / Elyaf", weight: 445, facility: "FAC-02 (Zeytinburnu)", purity: 83.8, status: "TESLİM EDİLDİ", sourceId: "COL-21" },
+  { id: "LOT-8953", day: "25.09.2026", material: "PP Plastik", weight: 336, facility: "FAC-05 (Küçükçekmece)", purity: 89.9, status: "ALINDI", sourceId: "COL-05" },
+  { id: "LOT-8954", day: "21.09.2026", material: "Elektronik Atık (WEEE)", weight: 98, facility: "FAC-03 (Bahçelievler)", purity: 80.4, status: "İŞLENDİ", sourceId: "COL-24" },
+  { id: "LOT-8955", day: "25.09.2026", material: "Karışık Ambalaj", weight: 672, facility: "FAC-01 (Topkapı)", purity: 78.2, status: "YENİ KAYIT", sourceId: "COL-08" },
+  { id: "LOT-8956", day: "23.09.2026", material: "Organik / Gıda Atığı", weight: 254, facility: "FAC-04 (İstinye)", purity: 86.1, status: "İŞLENDİ", sourceId: "COL-26" },
+  { id: "LOT-8957", day: "24.09.2026", material: "Hurda Demir / Çelik", weight: 890, facility: "FAC-01 (Topkapı)", purity: 87.4, status: "ROTALANDI", sourceId: "COL-18" },
+  { id: "LOT-8958", day: "25.09.2026", material: "Tehlikeli Kimyasal Atık", weight: 64, facility: "FAC-03 (Bahçelievler)", purity: 68.9, status: "KARANTİNADA", sourceId: "COL-30" }
+];

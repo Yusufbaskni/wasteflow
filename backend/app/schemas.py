@@ -101,3 +101,14 @@ class AutomationRunOut(BaseModel):
 class ManualRouteIn(BaseModel):
     destination_code: str
     notes: str = Field(default="manuel yönlendirme")
+from pydantic import BaseModel
+from typing import List
+
+class VisualAnalysisResponse(BaseModel):
+    primary_material: str
+    purity_score: float
+    analysis_method: str
+    detected_objects: List[str]
+
+    class Config:
+        from_attributes = True
