@@ -12,10 +12,28 @@ export default function SignaturePad({ onChange, height = 88 }) {
     canvas.width = rect.width * 2;
     canvas.height = height * 2;
     ctx.scale(2, 2);
-    ctx.strokeStyle = "#111111";
+    const styles = getComputedStyle(document.documentElement);
+    const bg = styles.getPropertyValue("--bg-input").trim() || "#ffffff";
+    const ink = styles.getPropertyValue("--text-main").trim() || "#111111";
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, rect.width, height);
+    ctx.strokeStyle = ink;
     ctx.lineWidth = 2;
     ctx.lineCap = "round";
   }, [height]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const sync = () => {
+      const ctx = canvas.getContext("2d");
+      const styles = getComputedStyle(document.documentElement);
+      ctx.strokeStyle = styles.getPropertyValue("--text-main").trim() || "#111111";
+    };
+    const mo = new MutationObserver(sync);
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => mo.disconnect();
+  }, []);
 
   const pos = (e) => {
     const canvas = canvasRef.current;
@@ -51,6 +69,9 @@ export default function SignaturePad({ onChange, height = 88 }) {
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const styles = getComputedStyle(document.documentElement);
+    ctx.fillStyle = styles.getPropertyValue("--bg-input").trim() || "#ffffff";
+    ctx.fillRect(0, 0, canvas.width / 2, canvas.height / 2);
     onChange?.("");
   };
 
@@ -65,9 +86,9 @@ export default function SignaturePad({ onChange, height = 88 }) {
         onTouchStart={start}
         onTouchMove={move}
         onTouchEnd={end}
-        style={{ width: "100%", height, background: "#ffffff", border: "1px solid #d0d0d0", borderRadius: 4, touchAction: "none", cursor: "crosshair" }}
+        style={{ width: "100%", height, background: "var(--bg-input)", border: "1px solid var(--border-color)", borderRadius: 4, touchAction: "none", cursor: "crosshair" }}
       />
-      <button type="button" onClick={clear} style={{ marginTop: 6, background: "transparent", color: "#444444", border: "1px solid #d0d0d0", borderRadius: 4, padding: "4px 8px", cursor: "pointer", fontSize: 11 }}>
+      <button type="button" onClick={clear} style={{ marginTop: 6, background: "transparent", color: "var(--text-muted)", border: "1px solid var(--border-color)", borderRadius: 4, padding: "4px 8px", cursor: "pointer", fontSize: 11 }}>
         İmzayı sil
       </button>
     </div>

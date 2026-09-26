@@ -5,7 +5,10 @@ export function loadCachedFx() {
     const raw = localStorage.getItem(FX_KEY);
     const parsed = raw ? JSON.parse(raw) : null;
     if (!parsed?.usdTry || !parsed?.eurTry) return null;
-    return { ...parsed, live: false };
+    const usdTry = saneTryPerUnit(parsed.usdTry);
+    const eurTry = saneTryPerUnit(parsed.eurTry);
+    if (!usdTry || !eurTry) return null;
+    return { ...parsed, usdTry, eurTry, live: false };
   } catch {
     return null;
   }
@@ -19,10 +22,18 @@ function saveCachedFx(fx) {
   }
 }
 
+function saneTryPerUnit(n) {
+  let x = Number(n);
+  if (!Number.isFinite(x) || x <= 0) return 0;
+  if (x < 1) x = 1 / x;
+  if (x < 15 || x > 90) return 0;
+  return Math.round(x * 10000) / 10000;
+}
+
 function pack({ usdTry, eurTry, source }) {
   return {
-    usdTry: Number(usdTry),
-    eurTry: Number(eurTry),
+    usdTry: saneTryPerUnit(usdTry),
+    eurTry: saneTryPerUnit(eurTry),
     source,
     live: true,
     updatedAt: new Date().toISOString()

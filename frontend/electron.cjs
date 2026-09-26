@@ -109,6 +109,23 @@ function tcmbSelling(xml, code) {
   return match ? Number(match[1]) : null;
 }
 
+ipcMain.handle('fetch-route', async (_event, from, to) => {
+  const qs = `${from.lng},${from.lat};${to.lng},${to.lat}?overview=full&geometries=geojson`;
+  const bases = [
+    'https://router.project-osrm.org',
+    'https://routing.openstreetmap.de/routed-car'
+  ];
+  let lastErr;
+  for (const base of bases) {
+    try {
+      return await fetchJson(`${base}/route/v1/driving/${qs}`);
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr || new Error('route-failed');
+});
+
 ipcMain.handle('fetch-fx', async () => {
   try {
     const xml = await (await fetch('https://www.tcmb.gov.tr/kurlar/today.xml', { cache: 'no-store' })).text();

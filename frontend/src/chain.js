@@ -1,4 +1,5 @@
 import { ewcOf } from "./ewc.js";
+import { ensureEIrsaliye, makeEIrsaliye } from "./eirsaliye.js";
 
 export function nowStamp() {
   return new Date().toLocaleString("tr-TR");
@@ -52,26 +53,13 @@ export function mergeWaybills(saved = []) {
     if (!w?.id) continue;
     if (!byId.has(w.id)) byId.set(w.id, w);
   }
-  return [...byId.values()].sort((a, b) => String(b.time).localeCompare(String(a.time), "tr"));
+  return [...byId.values()]
+    .sort((a, b) => String(b.time).localeCompare(String(a.time), "tr"))
+    .map((w, _, arr) => ensureEIrsaliye(w, arr));
 }
 
-export function makeWaybill({ lot, kind, kg, plate, driver, signer, signData, user }) {
-  const ewc = ewcOf(lot.material);
-  return {
-    id: `IRS-${Date.now().toString().slice(-8)}`,
-    lotId: lot.id,
-    kind,
-    material: lot.material,
-    ewc: ewc.code,
-    kg: Number(kg || lot.weight || 0),
-    sourceId: lot.sourceId || "",
-    facility: lot.facility,
-    plate: plate || "",
-    driver: driver || "",
-    signer: signer || user?.name || "",
-    signData: signData || "",
-    time: nowStamp()
-  };
+export function makeWaybill(opts) {
+  return makeEIrsaliye(opts);
 }
 
 export function massBalance(lots) {

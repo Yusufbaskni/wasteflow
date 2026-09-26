@@ -17,13 +17,16 @@ import { planDailyRoutes } from "./collectionRoutes.js";
 import { CIRCULARITY_TARGET, economicsFromLots } from "./economics.js";
 import { ewcOf, LICENSE_NOTICE } from "./ewc.js";
 import { makeWaybill, massBalance, mergeWaybills, nowClock, pushEvent, seedEvents } from "./chain.js";
+import { downloadUbl, GIB_STATUS, queryGib, receiverOptions, submitToGib } from "./eirsaliye.js";
 import SignaturePad from "./SignaturePad.jsx";
+import { applyTheme, loadTheme } from "./theme.js";
 import { fetchLiveFx, formatMoney, loadCachedFx } from "./fx.js";
 import { compressImageFile } from "./imageThumb.js";
 import QrScanner from "./QrScanner.jsx";
 import JuryTour from "./JuryTour.jsx";
 import FleetMap from "./FleetMap.jsx";
-import { dispatchMessage, FLEET_DESTINATIONS, INITIAL_FLEET, smsHref, tickFleet, waHref } from "./fleet.js";
+import { assignDestination, dispatchMessage, FLEET_DESTINATIONS, INITIAL_FLEET, makeVehicle, mergeFleet, needsRoadRoute, persistableFleet, smsHref, tickFleet, TRACKER_MODELS, waHref } from "./fleet.js";
+import { fetchDrivingPath, pathLengthKm } from "./roadRoute.js";
 import { DEFAULT_INBOX, ownerOf, threadsFrom } from "./depotInbox.js";
 import { DEFAULT_SITE_INBOX, siteContact, siteThreads } from "./collectionInbox.js";
 import { DEFAULT_MANAGER_INBOX, DEFAULT_STAFF, formatTry, makeStaff, managerOf, managersForDepot, managerThreads, STAFF_DEPOTS, STAFF_TITLES, staffStats } from "./staff.js";
@@ -74,7 +77,7 @@ const dict = {
     fleet: "Araç & Sürücüler",
     inbox: "Depo Mesajları",
     siteInbox: "Toplama Mesajları",
-    waybills: "İrsaliyeler",
+    waybills: "e-İrsaliye",
     sales: "Satış · Başer",
     salesStar: "Satış · Star",
     priceCompare: "1 kg karşılaştır",
@@ -123,7 +126,7 @@ const dict = {
     fleet: "Vehicles & Drivers",
     inbox: "Depot Inbox",
     siteInbox: "Collection Inbox",
-    waybills: "Waybills",
+    waybills: "e-Despatch",
     sales: "Sales · Başer",
     salesStar: "Sales · Star",
     priceCompare: "1 kg compare",
@@ -140,6 +143,7 @@ export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(Boolean(saved.session));
   const [user, setUser] = useState(saved.session || { name: "", role: "" });
   const [lang, setLang] = useState("tr");
+  const [theme, setTheme] = useState(() => applyTheme(loadTheme()));
   const [tab, setTab] = useState("overview");
   const [apiBase, setApiBase] = useState(getApiBase());
   const docsUrl = `${apiBase.replace(/\/$/, "")}/docs`;
@@ -187,9 +191,21 @@ export default function App() {
   const [extraUsers, setExtraUsers] = useState(() => saved.extraUsers || []);
   const [fx, setFx] = useState(() => loadCachedFx());
   const [fxBusy, setFxBusy] = useState(false);
-  const [fleet, setFleet] = useState(INITIAL_FLEET);
-  const [selectedVehicleId, setSelectedVehicleId] = useState("AR-01");
+  const [fleet, setFleet] = useState(() => mergeFleet(saved.fleetExtra));
+  const [selectedVehicleId, setSelectedVehicleId] = useState("AR-10");
   const [fleetDestId, setFleetDestId] = useState("BASER");
+  const [fleetNote, setFleetNote] = useState("");
+  const [vehicleForm, setVehicleForm] = useState({
+    plate: "",
+    brand: "Ford",
+    model: "Transit 350",
+    driver: "",
+    phone: "",
+    depotId: "FAC-04",
+    imei: "",
+    sim: "",
+    trackerModel: "Teltonika FMB920"
+  });
   const [dispatchNote, setDispatchNote] = useState("");
   const [depotMessages, setDepotMessages] = useState(() => (saved.depotMessages?.length ? saved.depotMessages : DEFAULT_INBOX));
   const [inboxDepot, setInboxDepot] = useState("FAC-03");
@@ -207,8 +223,9 @@ export default function App() {
   const [selectedStarSaleId, setSelectedStarSaleId] = useState("SAT-2026-0206");
   const [ticketModal, setTicketModal] = useState(null);
   const [ticketForm, setTicketForm] = useState({ kg: "", plate: "", signer: "", signData: "" });
-  const [wbDraft, setWbDraft] = useState({ lotId: "", kind: "TESLİM", kg: "", plate: "", signer: "", signData: "" });
+  const [wbDraft, setWbDraft] = useState({ lotId: "", kind: "TESLİM", kg: "", plate: "", signer: "", signData: "", receiverId: "FAC-04" });
   const [waybillNote, setWaybillNote] = useState("");
+  const [gibBusy, setGibBusy] = useState(false);
   const [opsNote, setOpsNote] = useState("");
   const [selectedWaybillId, setSelectedWaybillId] = useState("IRS-2026-0141");
   const [managerMessages, setManagerMessages] = useState(() => (saved.managerMessages?.length ? saved.managerMessages : DEFAULT_MANAGER_INBOX));
@@ -278,6 +295,71 @@ export default function App() {
   const persistManagers = (next) => {
     setManagerMessages(next);
     saveState({ managerMessages: next });
+  };
+
+  const persistFleetExtra = (vehicles) => {
+    saveState({ fleetExtra: persistableFleet(vehicles) });
+  };
+
+  const registerVehicle = (e) => {
+    e.preventDefault();
+    const plate = String(vehicleForm.plate || "").trim();
+    const driver = String(vehicleForm.driver || "").trim();
+    const imei = String(vehicleForm.imei || "").replace(/\D/g, "");
+    if (!plate) {
+      setFleetNote("Plaka gerekli.");
+      return;
+    }
+    if (!driver) {
+      setFleetNote("Şoför adı gerekli.");
+      return;
+    }
+    if (imei && imei.length < 14) {
+      setFleetNote("IMEI 15 haneli olmalı.");
+      return;
+    }
+    if (fleet.some((v) => v.plate.replace(/\s/g, "") === plate.replace(/\s/g, "").toUpperCase())) {
+      setFleetNote("Bu plaka zaten filoda.");
+      return;
+    }
+    const row = makeVehicle({
+      ...vehicleForm,
+      plate,
+      driver,
+      imei: imei || `8649980${String(Date.now()).slice(-8)}`
+    }, fleet);
+    const next = [row, ...fleet];
+    setFleet(next);
+    persistFleetExtra(next);
+    setSelectedVehicleId(row.id);
+    if (!staffRoster.some((s) => s.name === driver)) {
+      persistStaff([makeStaff({
+        name: driver,
+        title: "Şoför",
+        depotId: row.depotId,
+        phone: vehicleForm.phone || row.phone,
+        plate: row.plate,
+        salary: 42800,
+        age: 34
+      }, staffRoster), ...staffRoster]);
+    }
+    setVehicleForm((prev) => ({ ...prev, plate: "", driver: "", phone: "", imei: "", sim: "" }));
+    setFleetNote(`${row.id} kaydı · ${row.plate} · cihaz ${row.trackerModel} · IMEI ${row.imei}`);
+    pushAudit("FLEET_REGISTER", `${row.id} ${row.plate} IMEI ${row.imei} ${row.driver}`);
+  };
+
+  const retireVehicle = (id) => {
+    if (INITIAL_FLEET.some((v) => v.id === id)) {
+      setFleetNote("Demo araçları silinmez; yeni kayıtları çıkarabilirsiniz.");
+      return;
+    }
+    const row = fleet.find((v) => v.id === id);
+    const next = fleet.filter((v) => v.id !== id);
+    setFleet(next);
+    persistFleetExtra(next);
+    if (selectedVehicleId === id) setSelectedVehicleId(next[0]?.id || "AR-01");
+    setFleetNote(`${row?.plate || id} filodan çıkarıldı.`);
+    pushAudit("FLEET_RETIRE", `${id} ${row?.plate || ""}`);
   };
 
   const persistStaff = (next) => {
@@ -414,13 +496,34 @@ export default function App() {
       });
       persistLots(nextLots);
     };
+    const routing = new Set();
+    const attachRoads = (vehicles) => {
+      vehicles.forEach((v) => {
+        if (!needsRoadRoute(v) || routing.has(v.id)) return;
+        routing.add(v.id);
+        fetchDrivingPath({ lat: v.lat, lng: v.lng }, { lat: v.destLat, lng: v.destLng })
+          .then((path) => {
+            setFleet((cur) => cur.map((x) => (
+              x.id === v.id && x.destLat === v.destLat
+                ? { ...x, routePath: path, routeKmDone: 0, routeDistanceKm: pathLengthKm(path) }
+                : x
+            )));
+          })
+          .catch(() => {
+            routing.delete(v.id);
+          })
+          .finally(() => routing.delete(v.id));
+      });
+    };
     const timer = setInterval(() => {
       setFleet((prev) => {
         const { vehicles, arrivals } = tickFleet(prev);
         if (arrivals.length) queueMicrotask(() => onArrivals(arrivals));
+        queueMicrotask(() => attachRoads(vehicles));
         return vehicles;
       });
     }, 2000);
+    queueMicrotask(() => attachRoads(INITIAL_FLEET));
     return () => clearInterval(timer);
   }, []);
 
@@ -492,7 +595,7 @@ export default function App() {
     setNewLot({ material: "PET Plastik", weight: "", facility: "FAC-01 (Topkapı)", purity: "90", sourceId: "COL-01" });
   };
 
-  const issueWaybill = async ({ lot, kind, kg, plate, signer, signData }) => {
+  const issueWaybill = async ({ lot, kind, kg, plate, signer, signData, receiverId }) => {
     if (!lot) return null;
     const status = kind === "ALINDI" || kind === "ALIM" ? "ALINDI" : "TESLİM EDİLDİ";
     const vehicle = fleet.find((v) => v.plate === plate) || fleet[0];
@@ -504,7 +607,9 @@ export default function App() {
       driver: vehicle?.driver || "",
       signer,
       signData,
-      user
+      user,
+      receiverId: receiverId || (String(lot.facility || "").match(/FAC-\d+/) || ["FAC-04"])[0],
+      existing: waybills
     });
     persistWaybills([wb, ...waybills]);
     setSelectedWaybillId(wb.id);
@@ -512,13 +617,31 @@ export default function App() {
       if (row.id !== lot.id) return row;
       return pushEvent(
         { ...row, status, weight: Number(kg || row.weight) },
-        { type: status === "ALINDI" ? "ALIM" : "TESLİM", who: signer, plate: plate || vehicle?.plate, detail: `Tartım ${kg} kg · ${wb.id}` }
+        { type: status === "ALINDI" ? "ALIM" : "TESLİM", who: signer, plate: plate || vehicle?.plate, detail: `e-İrsaliye ${wb.documentNo} · tartım ${kg} kg` }
       );
     });
     persistLots(next);
-    pushAudit("IRSALIYE", `${wb.id} ${wb.kind} · ${lot.id} · ${wb.kg} kg · ${wb.plate}`);
+    pushAudit("EIRSALIYE", `${wb.documentNo} ${wb.kind} · ${lot.id} · ${wb.kg} kg · ${wb.ettn}`);
     await patchLotRemote({ ...lot, status, weight: kg });
     return wb;
+  };
+
+  const stampGib = (wb) => {
+    persistWaybills([wb, ...waybills.filter((w) => w.id !== wb.id)]);
+    setSelectedWaybillId(wb.id);
+  };
+
+  const sendToGib = async (wb) => {
+    if (!wb) return null;
+    setGibBusy(true);
+    try {
+      const sent = await submitToGib(wb);
+      stampGib(sent);
+      setWaybillNote(`${sent.documentNo} GİB test zarfı iletildi · ${sent.zarfId} · kod ${sent.gibCode}`);
+      return sent;
+    } finally {
+      setGibBusy(false);
+    }
   };
 
   const openTicket = (lot, kind) => {
@@ -530,7 +653,7 @@ export default function App() {
   const confirmTicket = async (e) => {
     e.preventDefault();
     if (!ticketModal) return;
-    await issueWaybill({
+    const wb = await issueWaybill({
       lot: ticketModal.lot,
       kind: ticketModal.kind,
       kg: ticketForm.kg,
@@ -538,6 +661,7 @@ export default function App() {
       signer: ticketForm.signer,
       signData: ticketForm.signData
     });
+    await sendToGib(wb);
     setTicketModal(null);
   };
 
@@ -558,19 +682,20 @@ export default function App() {
       kg: wbDraft.kg || lot.weight,
       plate: wbDraft.plate || fleet[0]?.plate,
       signer: wbDraft.signer || user.name,
-      signData: wbDraft.signData
+      signData: wbDraft.signData,
+      receiverId: wbDraft.receiverId
     });
-    if (wb) setWaybillNote(`${wb.id} kesildi · ${wb.kind} · ${wb.kg} kg`);
+    await sendToGib(wb);
   };
 
   const dispatchToBuyer = (plate, buyerId = "BASER") => {
     const dest = FLEET_DESTINATIONS.find((d) => d.id === buyerId);
     if (!dest) return;
-    setFleet((prev) => prev.map((v) => (
-      v.plate === plate
-        ? { ...v, destId: dest.id, destLabel: dest.label, destLat: dest.lat, destLng: dest.lng, tripStartLat: v.lat, tripStartLng: v.lng, arrivedAck: false }
-        : v
-    )));
+    setFleet((prev) => {
+      const next = prev.map((v) => (v.plate === plate ? assignDestination(v, dest) : v));
+      persistFleetExtra(next);
+      return next;
+    });
     setFleetDestId(buyerId);
     const hit = fleet.find((v) => v.plate === plate);
     if (hit) setSelectedVehicleId(hit.id);
@@ -643,11 +768,15 @@ export default function App() {
     const dest = FLEET_DESTINATIONS.find((d) => d.id === fleetDestId);
     if (!vehicle || !dest) return;
     const text = dispatchMessage(vehicle, dest);
-    setFleet((prev) => prev.map((v) => (
-      v.id === vehicle.id
-        ? { ...v, destId: dest.id, destLabel: dest.label, destLat: dest.lat, destLng: dest.lng, lastNotify: new Date().toLocaleTimeString("tr-TR"), tripStartLat: vehicle.lat, tripStartLng: vehicle.lng, arrivedAck: false }
-        : v
-    )));
+    setFleet((prev) => {
+      const next = prev.map((v) => (
+        v.id === vehicle.id
+          ? assignDestination(v, dest, { lastNotify: new Date().toLocaleTimeString("tr-TR") })
+          : v
+      ));
+      persistFleetExtra(next);
+      return next;
+    });
     const href = channel === "wa" ? waHref(vehicle.phone, text) : smsHref(vehicle.phone, text);
     window.open(href, "_blank");
     if (typeof Notification !== "undefined" && Notification.permission === "granted") {
@@ -856,12 +985,12 @@ export default function App() {
 
   if (!isLoggedIn) {
     return (
-      <div style={{ display: "flex", height: "100vh", backgroundColor: "#ffffff", color: "#111111", justifyContent: "center", alignItems: "center", fontFamily: "system-ui, sans-serif" }}>
-        <div style={{ backgroundColor: "#ffffff", padding: "40px", borderRadius: "8px", border: "1px solid #e8e8e8", width: "360px" }}>
-            <img src={LOGO_SRC} alt="İstinye Üniversitesi" style={{ width: "220px", height: "auto", marginBottom: "20px", display: "block", background: "#ffffff" }} />
-          <div style={{ fontSize: "11px", letterSpacing: "2px", color: "#111111", fontWeight: "700", textTransform: "uppercase", marginBottom: "8px" }}>WASTEFLOW PLATFORM</div>
-          <h2 style={{ color: "#111111", margin: "0 0 6px 0", fontSize: "20px", fontWeight: "600" }}>{t.loginTitle}</h2>
-          <p style={{ color: "#444444", fontSize: "13px", marginBottom: "24px" }}>{t.loginSubtitle}</p>
+      <div style={{ display: "flex", height: "100vh", backgroundColor: "var(--bg-surface)", color: "var(--text-main)", justifyContent: "center", alignItems: "center", fontFamily: "system-ui, sans-serif" }}>
+        <div style={{ backgroundColor: "var(--bg-surface)", padding: "40px", borderRadius: "8px", border: "1px solid var(--border-color)", width: "360px" }}>
+            <img src={LOGO_SRC} alt="İstinye Üniversitesi" className="brand-logo" style={{ width: "220px", height: "auto", marginBottom: "20px", display: "block" }} />
+          <div style={{ fontSize: "11px", letterSpacing: "2px", color: "var(--text-main)", fontWeight: "700", textTransform: "uppercase", marginBottom: "8px" }}>WASTEFLOW PLATFORM</div>
+          <h2 style={{ color: "var(--text-main)", margin: "0 0 6px 0", fontSize: "20px", fontWeight: "600" }}>{t.loginTitle}</h2>
+          <p style={{ color: "var(--text-muted)", fontSize: "13px", marginBottom: "24px" }}>{t.loginSubtitle}</p>
           <form onSubmit={handleLogin} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
             <div>
               <label style={labelStyle}>Kullanıcı Kimliği</label>
@@ -871,11 +1000,11 @@ export default function App() {
               <label style={labelStyle}>Erişim Parolası</label>
               <input type="password" value={loginPass} onChange={(e) => setLoginPass(e.target.value)} autoComplete="current-password" style={inputStyle} />
             </div>
-            {loginError && <div style={{ color: "#111111", fontSize: "12px" }}>{loginError}</div>}
+            {loginError && <div style={{ color: "var(--text-main)", fontSize: "12px" }}>{loginError}</div>}
             <button type="submit" disabled={loginBusy} style={{ ...btnPrimary, width: "100%", marginTop: "10px" }}>
               {loginBusy ? "Doğrulanıyor..." : t.loginBtn}
             </button>
-            <div style={{ color: "#444444", fontSize: "11px", lineHeight: 1.4 }}>{t.loginHint}</div>
+            <div style={{ color: "var(--text-muted)", fontSize: "11px", lineHeight: 1.4 }}>{t.loginHint}</div>
           </form>
         </div>
       </div>
@@ -894,7 +1023,7 @@ export default function App() {
   const statusChart = [
     { name: lang === "en" ? "Processed" : "İşlendi", value: lots.filter((l) => l.status === "İŞLENDİ").length, fill: "#1B6B4A" },
     { name: lang === "en" ? "Routed" : "Rotalandı", value: lots.filter((l) => l.status === "ROTALANDI").length, fill: "#1E5A9C" },
-    { name: lang === "en" ? "Picked up" : "Alındı", value: lots.filter((l) => l.status === "ALINDI").length, fill: "#0B2C5F" },
+    { name: lang === "en" ? "Picked up" : "Alındı", value: lots.filter((l) => l.status === "ALINDI").length, fill: "var(--accent-navy)" },
     { name: lang === "en" ? "Delivered" : "Teslim", value: lots.filter((l) => l.status === "TESLİM EDİLDİ").length, fill: "#3D7CC4" },
     { name: lang === "en" ? "Incoming" : "Yeni kayıt", value: lots.filter((l) => l.status === "YENİ KAYIT" || l.status === "CSV AKTARILDI").length, fill: "#C4A35A" },
     { name: lang === "en" ? "Quarantine" : "Karantina", value: lots.filter((l) => l.status === "KARANTİNADA").length, fill: "#C62828" }
@@ -908,9 +1037,9 @@ export default function App() {
     .map(([name, kg]) => ({ name: name.length > 18 ? `${name.slice(0, 16)}…` : name, kg: Math.round(kg) }))
     .sort((a, b) => b.kg - a.kg)
     .slice(0, 5);
-  const chartTooltip = { backgroundColor: "#ffffff", border: "1px solid #d0d0d0", borderRadius: 6, fontSize: 12, color: "#111111" };
+  const chartTooltip = { backgroundColor: "var(--bg-surface)", border: "1px solid var(--border-color)", borderRadius: 6, fontSize: 12, color: "var(--text-main)" };
   const forecast = sevenDayForecast(iotBins, lots);
-  const forecastColors = { "FAC-01": "#0B2C5F", "FAC-02": "#1E5A9C", "FAC-03": "#C4A35A", "FAC-04": "#1B6B4A", "FAC-05": "#C62828" };
+  const forecastColors = { "FAC-01": "var(--accent-navy)", "FAC-02": "#1E5A9C", "FAC-03": "#C4A35A", "FAC-04": "#1B6B4A", "FAC-05": "#C62828" };
   const filledSites = withCollectionFill(lots);
   const visibleCollections = collectionFilter === "all"
     ? filledSites
@@ -920,7 +1049,7 @@ export default function App() {
   const plannedKm = dailyRoutes.reduce((s, r) => s + Number(r.km || 0), 0);
   const drivenKm = fleet.reduce((s, v) => s + Number(v.tripKm || 0), 0);
   const fleetKm = plannedKm + drivenKm;
-  const econ = economicsFromLots(lots, fx, fleetKm);
+  const econ = economicsFromLots(lots, fx, fleetKm, sales);
   const salesBook = summarizeSales(sales, "BASER");
   const starBook = summarizeSales(sales, "STAR");
   const soldIds = soldLotIds(sales);
@@ -963,16 +1092,16 @@ export default function App() {
   }, {});
 
   return (
-    <div style={{ display: "flex", width: "100vw", height: "100vh", backgroundColor: "#ffffff", color: "#111111", margin: 0, padding: 0, overflow: "hidden", fontFamily: "system-ui, -apple-system, sans-serif" }}>
+    <div style={{ display: "flex", width: "100vw", height: "100vh", backgroundColor: "var(--bg-surface)", color: "var(--text-main)", margin: 0, padding: 0, overflow: "hidden", fontFamily: "system-ui, -apple-system, sans-serif" }}>
       
       {/* Sol Kurumsal Navigasyon Paneli */}
-      <div style={{ width: "250px", backgroundColor: "#ffffff", padding: "24px 16px", borderRight: "1px solid #e8e8e8", display: "flex", flexDirection: "column", height: "100vh", minHeight: 0, overflow: "hidden" }}>
+      <div style={{ width: "250px", backgroundColor: "var(--bg-surface)", padding: "24px 16px", borderRight: "1px solid var(--border-color)", display: "flex", flexDirection: "column", height: "100vh", minHeight: 0, overflow: "hidden" }}>
         <div style={{ flexShrink: 0, padding: "0 8px", marginBottom: "16px" }}>
-            <img src={LOGO_SRC} alt="İstinye Üniversitesi" style={{ width: "180px", height: "auto", marginBottom: "12px", display: "block", background: "#ffffff" }} />
-            <div style={{ color: "#111111", fontSize: "16px", fontWeight: "700", letterSpacing: "0.5px" }}>{t.title}</div>
-            <div style={{ color: "#444444", fontSize: "11px", marginTop: "2px" }}>OPERATIONAL OS v2.0</div>
+            <img src={LOGO_SRC} alt="İstinye Üniversitesi" className="brand-logo" style={{ width: "180px", height: "auto", marginBottom: "12px", display: "block" }} />
+            <div style={{ color: "var(--text-main)", fontSize: "16px", fontWeight: "700", letterSpacing: "0.5px" }}>{t.title}</div>
+            <div style={{ color: "var(--text-muted)", fontSize: "11px", marginTop: "2px" }}>OPERATIONAL OS v2.0</div>
         </div>
-          <nav style={{ display: "flex", flexDirection: "column", gap: "4px", flex: 1, minHeight: 0, overflowY: "scroll", overflowX: "hidden", paddingRight: 4, scrollbarWidth: "thin", scrollbarColor: "#888888 #ffffff" }}>
+          <nav style={{ display: "flex", flexDirection: "column", gap: "4px", flex: 1, minHeight: 0, overflowY: "scroll", overflowX: "hidden", paddingRight: 4, scrollbarWidth: "thin", scrollbarColor: "var(--scrollbar-thumb) var(--bg-surface)" }}>
             {[
               ["overview", t.overview],
               ["map", t.map],
@@ -1017,37 +1146,44 @@ export default function App() {
             ))}
           </nav>
         {/* Kullanıcı Oturumu ve Dil Seçimi */}
-        <div style={{ borderTop: "1px solid #e8e8e8", paddingTop: "16px", paddingLeft: "8px", paddingRight: "8px", flexShrink: 0 }}>
+        <div style={{ borderTop: "1px solid var(--border-color)", paddingTop: "16px", paddingLeft: "8px", paddingRight: "8px", flexShrink: 0 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
             <div>
-              <div style={{ fontSize: "12px", color: "#111111", fontWeight: "600" }}>{user.name}</div>
-              <div style={{ fontSize: "10px", color: "#444444" }}>{user.role}</div>
+              <div style={{ fontSize: "12px", color: "var(--text-main)", fontWeight: "600" }}>{user.name}</div>
+              <div style={{ fontSize: "10px", color: "var(--text-muted)" }}>{user.role}</div>
             </div>
-            <button onClick={() => { setTourStep(0); setTab("overview"); }} style={{ background: "#e8e8e8", color: "#111111", border: "1px solid #d0d0d0", borderRadius: "4px", padding: "3px 8px", cursor: "pointer", fontSize: "10px", fontWeight: "600" }}>
+            <button onClick={() => { setTourStep(0); setTab("overview"); }} style={{ background: "var(--border-color)", color: "var(--text-main)", border: "1px solid var(--border-color)", borderRadius: "4px", padding: "3px 8px", cursor: "pointer", fontSize: "10px", fontWeight: "600" }}>
               Jüri turu
             </button>
-            <button onClick={() => setLang(lang === "tr" ? "en" : "tr")} style={{ background: "#e8e8e8", color: "#444444", border: "1px solid #d0d0d0", borderRadius: "4px", padding: "3px 8px", cursor: "pointer", fontSize: "10px", fontWeight: "600" }}>
+            <button onClick={() => setLang(lang === "tr" ? "en" : "tr")} style={{ background: "var(--bg-muted)", color: "var(--text-muted)", border: "1px solid var(--border-color)", borderRadius: "4px", padding: "3px 8px", cursor: "pointer", fontSize: "10px", fontWeight: "600" }}>
               {lang.toUpperCase()}
             </button>
+            <button
+              type="button"
+              onClick={() => setTheme(applyTheme(theme === "dark" ? "light" : "dark"))}
+              style={{ background: "var(--bg-muted)", color: "var(--text-main)", border: "1px solid var(--border-color)", borderRadius: "4px", padding: "3px 8px", cursor: "pointer", fontSize: "10px", fontWeight: "600" }}
+            >
+              {theme === "dark" ? (lang === "en" ? "Light" : "Açık") : (lang === "en" ? "Dark" : "Koyu")}
+            </button>
           </div>
-          <button onClick={handleLogout} style={{ background: "transparent", color: "#111111", border: "1px solid #cccccc", borderRadius: "4px", width: "100%", padding: "7px", cursor: "pointer", fontSize: "11px", fontWeight: "600" }}>
+          <button onClick={handleLogout} style={{ background: "transparent", color: "var(--text-main)", border: "1px solid #cccccc", borderRadius: "4px", width: "100%", padding: "7px", cursor: "pointer", fontSize: "11px", fontWeight: "600" }}>
             {t.logout}
           </button>
         </div>
       </div>
 
       {/* Ana Çalışma Alanı */}
-      <div style={{ flex: 1, minWidth: 0, padding: "28px 36px", overflowY: "auto", backgroundColor: "#ffffff" }}>
+      <div style={{ flex: 1, minWidth: 0, padding: "28px 36px", overflowY: "auto", backgroundColor: "var(--bg-surface)" }}>
         {alertBanner && (
-          <div style={{ background: "#f4f4f4", border: "1px solid #111111", color: "#111111", padding: "10px 14px", borderRadius: 6, marginBottom: 16, fontSize: 12, fontWeight: 600 }}>
+          <div style={{ background: "var(--bg-muted)", border: "1px solid var(--border-strong)", color: "var(--text-main)", padding: "10px 14px", borderRadius: 6, marginBottom: 16, fontSize: 12, fontWeight: 600 }}>
             UYARI · {alertBanner}
             {hotSites.length ? ` · ${hotSites.length} toplama alanı ≥%80` : ""}
-            <button type="button" onClick={() => setAlertBanner("")} style={{ float: "right", background: "transparent", color: "#111111", border: "none", cursor: "pointer" }}>×</button>
+            <button type="button" onClick={() => setAlertBanner("")} style={{ float: "right", background: "transparent", color: "var(--text-main)", border: "none", cursor: "pointer" }}>×</button>
           </div>
         )}
         
         {/* Üst Durum Çubuğu */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "28px", paddingBottom: "16px", borderBottom: "1px solid #e8e8e8" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "28px", paddingBottom: "16px", borderBottom: "1px solid var(--border-color)" }}>
           <a
             href={docsUrl}
             target="_blank"
@@ -1055,7 +1191,7 @@ export default function App() {
             style={{ display: "flex", alignItems: "center", gap: "10px", textDecoration: "none", cursor: "pointer" }}
           >
             <span style={{ display: "inline-block", width: "8px", height: "8px", borderRadius: "50%", backgroundColor: serverLive ? "#1B8A4A" : "#9CA3AF" }}></span>
-            <span style={{ color: "#444444", fontSize: "11px", fontWeight: "600", letterSpacing: "0.5px" }}>{serverLive ? t.connected : "YEREL KAYIT AKTİF"}</span>
+            <span style={{ color: "var(--text-muted)", fontSize: "11px", fontWeight: "600", letterSpacing: "0.5px" }}>{serverLive ? t.connected : "YEREL KAYIT AKTİF"}</span>
           </a>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
             <span style={{ fontSize: 11, color: fx?.live ? "#1B6B4A" : "#C62828", fontWeight: 700 }}>
@@ -1081,38 +1217,38 @@ export default function App() {
         {tab === "overview" && (
           <div>
             <h2 style={pageHeaderStyle}>{t.overview}</h2>
-            <p style={{ color: "#444444", fontSize: "12px", margin: "8px 0 0 0" }}>
+            <p style={{ color: "var(--text-muted)", fontSize: "12px", margin: "8px 0 0 0" }}>
               {lots.length} lot · 5 depo · 10 müdür · {hr.count} personel · maaş {formatTry(hr.payroll)} · prim {formatTry(hr.bonus)} · Başer {formatTry(salesBook.amount)} · Star {formatTry(starBook.amount)}
             </p>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "16px", margin: "20px 0" }}>
-              <Card title={t.circularity} value={`%${metrics?.circularity_rate ?? 0}`} color="#111111" />
-              <div onClick={() => setTab("esg")} style={{ cursor: "pointer" }}><Card title="Giren kütle" value={`${mass.incomingKg} kg`} color="#111111" /></div>
-              <div onClick={() => setTab("hr")} style={{ cursor: "pointer" }}><Card title="Aylık bordro" value={formatTry(hr.gross)} color="#111111" /></div>
-              <div onClick={() => setTab("hr")} style={{ cursor: "pointer" }}><Card title="Performans primi" value={formatTry(hr.bonus)} color="#111111" /></div>
+              <Card title={t.circularity} value={`%${metrics?.circularity_rate ?? 0}`} color="var(--text-main)" />
+              <div onClick={() => setTab("esg")} style={{ cursor: "pointer" }}><Card title="Giren kütle" value={`${mass.incomingKg} kg`} color="var(--text-main)" /></div>
+              <div onClick={() => setTab("hr")} style={{ cursor: "pointer" }}><Card title="Aylık bordro" value={formatTry(hr.gross)} color="var(--text-main)" /></div>
+              <div onClick={() => setTab("hr")} style={{ cursor: "pointer" }}><Card title="Performans primi" value={formatTry(hr.bonus)} color="var(--text-main)" /></div>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "16px", marginBottom: 16 }}>
-              <Card title={t.recycled} value={`${metrics?.recycled_tons ?? 0} TON`} color="#111111" />
-              <Card title={t.landfilled} value={`${metrics?.landfilled_tons ?? 0} TON`} color="#111111" />
-              <div onClick={() => setTab("waybills")} style={{ cursor: "pointer" }}><Card title="İrsaliye" value={waybills.length} color="#111111" /></div>
-              <div onClick={() => setTab("sales")} style={{ cursor: "pointer" }}><Card title="Başer satışı" value={formatTry(salesBook.amount)} color="#111111" /></div>
+              <Card title={t.recycled} value={`${metrics?.recycled_tons ?? 0} TON`} color="var(--text-main)" />
+              <Card title={t.landfilled} value={`${metrics?.landfilled_tons ?? 0} TON`} color="var(--text-main)" />
+              <div onClick={() => setTab("waybills")} style={{ cursor: "pointer" }}><Card title="e-İrsaliye" value={waybills.length} color="var(--text-main)" /></div>
+              <div onClick={() => setTab("sales")} style={{ cursor: "pointer" }}><Card title="Başer satışı" value={formatTry(salesBook.amount)} color="var(--text-main)" /></div>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "16px", marginBottom: 16 }}>
-              <div onClick={() => setTab("salesStar")} style={{ cursor: "pointer" }}><Card title="Star satışı" value={formatTry(starBook.amount)} color="#111111" /></div>
-              <div onClick={() => setTab("priceCompare")} style={{ cursor: "pointer" }}><Card title="1 kg karşılaştır" value={`${kgCompare.filter((r) => r.winner !== "eşit").length} fark`} color="#111111" /></div>
-              <div onClick={() => setTab("fleet")} style={{ cursor: "pointer" }}><Card title="Filo görevde" value={`${taskedFleet.length}/15`} color="#111111" /></div>
-              <div onClick={() => setTab("staff")} style={{ cursor: "pointer" }}><Card title="Kadro" value={`${hr.managers} müdür · ${hr.drivers} şoför`} color="#111111" /></div>
+              <div onClick={() => setTab("salesStar")} style={{ cursor: "pointer" }}><Card title="Star satışı" value={formatTry(starBook.amount)} color="var(--text-main)" /></div>
+              <div onClick={() => setTab("priceCompare")} style={{ cursor: "pointer" }}><Card title="1 kg karşılaştır" value={`${kgCompare.filter((r) => r.winner !== "eşit").length} fark`} color="var(--text-main)" /></div>
+              <div onClick={() => setTab("fleet")} style={{ cursor: "pointer" }}><Card title="Filo görevde" value={`${taskedFleet.length}/${fleet.length}`} color="var(--text-main)" /></div>
+              <div onClick={() => setTab("staff")} style={{ cursor: "pointer" }}><Card title="Kadro" value={`${hr.managers} müdür · ${hr.drivers} şoför`} color="var(--text-main)" /></div>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "16px", marginBottom: 16 }}>
-              <div onClick={() => setTab("collection")} style={{ cursor: "pointer" }}><Card title="Kritik toplama" value={hotSites.length} color={hotSites.length ? "#111111" : "#111111"} /></div>
-              <div onClick={() => setTab("managers")} style={{ cursor: "pointer" }}><Card title="Müdür mesajı" value={managerUnread} color={managerUnread ? "#111111" : "#111111"} /></div>
-              <div onClick={() => setTab("inbox")} style={{ cursor: "pointer" }}><Card title="Depo / saha kutusu" value={`${inboxUnread} / ${siteUnread}`} color={(inboxUnread || siteUnread) ? "#111111" : "#111111"} /></div>
+              <div onClick={() => setTab("collection")} style={{ cursor: "pointer" }}><Card title="Kritik toplama" value={hotSites.length} color={hotSites.length ? "var(--text-main)" : "var(--text-main)"} /></div>
+              <div onClick={() => setTab("managers")} style={{ cursor: "pointer" }}><Card title="Müdür mesajı" value={managerUnread} color={managerUnread ? "var(--text-main)" : "var(--text-main)"} /></div>
+              <div onClick={() => setTab("inbox")} style={{ cursor: "pointer" }}><Card title="Depo / saha kutusu" value={`${inboxUnread} / ${siteUnread}`} color={(inboxUnread || siteUnread) ? "var(--text-main)" : "var(--text-main)"} /></div>
             </div>
             {staffHits.length ? (
               <div style={{ ...sectionBoxStyle, marginBottom: 16 }}>
                 <h3 style={sectionTitleStyle}>Personel araması</h3>
                 {staffHits.map((p) => (
-                  <button key={p.id} type="button" onClick={() => { setSelectedStaffId(p.id); setTab("staff"); }} style={{ display: "block", width: "100%", textAlign: "left", background: "transparent", border: "none", borderTop: "1px solid #e8e8e8", color: "#111111", padding: "8px 0", cursor: "pointer", fontSize: 12 }}>
-                    <strong style={{ color: "#111111" }}>{p.name}</strong> · {p.title} · {p.depotId} · {formatTry(p.salary)}
+                  <button key={p.id} type="button" onClick={() => { setSelectedStaffId(p.id); setTab("staff"); }} style={{ display: "block", width: "100%", textAlign: "left", background: "transparent", border: "none", borderTop: "1px solid var(--border-color)", color: "var(--text-main)", padding: "8px 0", cursor: "pointer", fontSize: 12 }}>
+                    <strong style={{ color: "var(--text-main)" }}>{p.name}</strong> · {p.title} · {p.depotId} · {formatTry(p.salary)}
                   </button>
                 ))}
               </div>
@@ -1132,13 +1268,13 @@ export default function App() {
                       ...sectionBoxStyle,
                       textAlign: "left",
                       cursor: "pointer",
-                      borderColor: (perf?.score || 0) < 45 ? "#111111" : unread ? "#111111" : "#e8e8e8",
-                      color: "#111111"
+                      borderColor: (perf?.score || 0) < 45 ? "var(--text-main)" : unread ? "var(--text-main)" : "var(--border-color)",
+                      color: "var(--text-main)"
                     }}
                   >
-                    <div style={{ fontSize: 11, color: "#444444", fontWeight: 700 }}>{depot.id} · skor {perf?.score ?? 0}</div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 700 }}>{depot.id} · skor {perf?.score ?? 0}</div>
                     <div style={{ fontSize: 14, fontWeight: 700, margin: "4px 0 8px" }}>{depot.name}</div>
-                    <div style={{ fontSize: 11, color: "#444444", lineHeight: 1.5 }}>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.5 }}>
                       {mgrs.map((m) => <div key={m.id}>{m.shift === "Gündüz" ? "G" : "C"} · {m.name}</div>)}
                       %{Math.round((perf?.rate || 0) * 100)} prim · {formatTry(row?.prim || 0)}
                     </div>
@@ -1147,13 +1283,13 @@ export default function App() {
               })}
             </div>
             <div style={{ ...sectionBoxStyle, marginBottom: 16 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#444444", marginBottom: 6 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--text-muted)", marginBottom: 6 }}>
                 <span>Döngüsellik hedefi %{CIRCULARITY_TARGET}</span>
-                <span style={{ color: (metrics?.circularity_rate ?? 0) >= CIRCULARITY_TARGET ? "#111111" : "#111111", fontWeight: 700 }}>
+                <span style={{ color: (metrics?.circularity_rate ?? 0) >= CIRCULARITY_TARGET ? "var(--text-main)" : "var(--text-main)", fontWeight: 700 }}>
                   mevcut %{(metrics?.circularity_rate ?? 0)}
                 </span>
               </div>
-              <div style={{ height: 8, background: "#e8e8e8", borderRadius: 99, overflow: "hidden" }}>
+              <div style={{ height: 8, background: "var(--border-color)", borderRadius: 99, overflow: "hidden" }}>
                 <div style={{ width: `${Math.min(100, metrics?.circularity_rate ?? 0)}%`, height: "100%", background: (metrics?.circularity_rate ?? 0) >= CIRCULARITY_TARGET ? "#1B6B4A" : "#C4A35A" }} />
               </div>
             </div>
@@ -1164,10 +1300,10 @@ export default function App() {
                 <div style={{ height: 240 }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={facilityChart} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                      <XAxis dataKey="tesis" stroke="#444444" tick={{ fill: "#444444", fontSize: 11 }} />
-                      <YAxis stroke="#444444" tick={{ fill: "#444444", fontSize: 11 }} />
+                      <XAxis dataKey="tesis" stroke="var(--text-muted)" tick={{ fill: "var(--text-muted)", fontSize: 11 }} />
+                      <YAxis stroke="var(--text-muted)" tick={{ fill: "var(--text-muted)", fontSize: 11 }} />
                       <Tooltip contentStyle={chartTooltip} />
-                      <Bar dataKey="kg" fill="#0B2C5F" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="kg" fill="var(--accent-navy)" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -1187,12 +1323,12 @@ export default function App() {
                       </PieChart>
                     </ResponsiveContainer>
                   ) : (
-                    <div style={{ color: "#444444", fontSize: 12 }}>Veri yok</div>
+                    <div style={{ color: "var(--text-muted)", fontSize: 12 }}>Veri yok</div>
                   )}
                 </div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "4px" }}>
                   {statusChart.map((s) => (
-                    <span key={s.name} style={{ fontSize: 11, color: "#444444" }}>
+                    <span key={s.name} style={{ fontSize: 11, color: "var(--text-muted)" }}>
                       <span style={{ color: s.fill }}>●</span> {s.name} {s.value}
                     </span>
                   ))}
@@ -1202,17 +1338,17 @@ export default function App() {
 
             <div style={{ ...sectionBoxStyle, marginBottom: "16px" }}>
               <h3 style={sectionTitleStyle}>7 günlük depo doluluk tahmini (%)</h3>
-              <p style={{ color: "#444444", fontSize: 12, margin: "-8px 0 12px 0" }}>
+              <p style={{ color: "var(--text-muted)", fontSize: 12, margin: "-8px 0 12px 0" }}>
                     Mevcut IoT doluluk + lot yükünden günlük artış. %95 üzeri günler kalın çerçeve uyarısı verir.
               </p>
               <div style={{ height: 280 }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={forecast.series} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
-                    <CartesianGrid stroke="#e8e8e8" strokeDasharray="3 3" />
-                    <XAxis dataKey="day" stroke="#444444" tick={{ fill: "#444444", fontSize: 11 }} />
-                    <YAxis domain={[0, 100]} stroke="#444444" tick={{ fill: "#444444", fontSize: 11 }} />
+                    <CartesianGrid stroke="var(--border-color)" strokeDasharray="3 3" />
+                    <XAxis dataKey="day" stroke="var(--text-muted)" tick={{ fill: "var(--text-muted)", fontSize: 11 }} />
+                    <YAxis domain={[0, 100]} stroke="var(--text-muted)" tick={{ fill: "var(--text-muted)", fontSize: 11 }} />
                     <Tooltip contentStyle={chartTooltip} />
-                    <Legend wrapperStyle={{ fontSize: 11, color: "#444444" }} />
+                    <Legend wrapperStyle={{ fontSize: 11, color: "var(--text-muted)" }} />
                     {forecast.depots.map((depot) => (
                       <Line
                         key={depot.id}
@@ -1228,13 +1364,13 @@ export default function App() {
                 </ResponsiveContainer>
               </div>
               {dispatchAdvice.length ? (
-                <div style={{ marginTop: 12, fontSize: 12, color: "#111111" }}>
+                <div style={{ marginTop: 12, fontSize: 12, color: "var(--text-main)" }}>
                   <div style={{ fontWeight: 700, marginBottom: 4 }}>Araç çıkarma tavsiyesi</div>
                   {dispatchAdvice.slice(0, 6).map((line) => <div key={line}>{line}</div>)}
                 </div>
               ) : null}
               {forecast.warnings.length ? (
-                <div style={{ marginTop: 12, fontSize: 12, color: "#111111" }}>
+                <div style={{ marginTop: 12, fontSize: 12, color: "var(--text-main)" }}>
                   {forecast.warnings.map((w) => (
                     <div key={w.depot.id}>
                       {w.depot.id} {w.depot.name}: {w.day} tarihinde tahmini %{w.fill} — toplama önerilir.
@@ -1242,7 +1378,7 @@ export default function App() {
                   ))}
                 </div>
               ) : (
-                <div style={{ marginTop: 12, fontSize: 12, color: "#444444" }}>7 gün içinde %95 aşımı beklenmiyor.</div>
+                <div style={{ marginTop: 12, fontSize: 12, color: "var(--text-muted)" }}>7 gün içinde %95 aşımı beklenmiyor.</div>
               )}
             </div>
 
@@ -1252,8 +1388,8 @@ export default function App() {
                 <div style={{ height: 220 }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={materialChart} layout="vertical" margin={{ top: 8, right: 16, left: 8, bottom: 0 }}>
-                      <XAxis type="number" stroke="#444444" tick={{ fill: "#444444", fontSize: 11 }} />
-                      <YAxis type="category" dataKey="name" width={110} stroke="#444444" tick={{ fill: "#111111", fontSize: 11 }} />
+                      <XAxis type="number" stroke="var(--text-muted)" tick={{ fill: "var(--text-muted)", fontSize: 11 }} />
+                      <YAxis type="category" dataKey="name" width={110} stroke="var(--text-muted)" tick={{ fill: "var(--text-main)", fontSize: 11 }} />
                       <Tooltip contentStyle={chartTooltip} />
                       <Bar dataKey="kg" fill="#1E5A9C" radius={[0, 4, 4, 0]} />
                     </BarChart>
@@ -1265,14 +1401,14 @@ export default function App() {
                 <div style={{ height: 220 }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={hr.byDepot} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                      <XAxis dataKey="tesis" stroke="#444444" tick={{ fill: "#444444", fontSize: 11 }} />
-                      <YAxis stroke="#444444" tick={{ fill: "#444444", fontSize: 11 }} />
+                      <XAxis dataKey="tesis" stroke="var(--text-muted)" tick={{ fill: "var(--text-muted)", fontSize: 11 }} />
+                      <YAxis stroke="var(--text-muted)" tick={{ fill: "var(--text-muted)", fontSize: 11 }} />
                       <Tooltip contentStyle={chartTooltip} />
                       <Bar dataKey="prim" fill="#C4A35A" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
-                <div style={{ fontSize: 11, color: "#444444", marginTop: 8 }}>Hacim + işlenen lot − karantina − doluluk. Boş/hazır depo küçük prim alır. A %18 · B %12 · C %7 · D %3 (skor ≥40)</div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>Hacim + işlenen lot − karantina − doluluk. Boş/hazır depo küçük prim alır. A %18 · B %12 · C %7 · D %3 (skor ≥40)</div>
               </div>
             </div>
 
@@ -1291,30 +1427,30 @@ export default function App() {
                   </thead>
                   <tbody>
                     {lots.slice(0, 6).map((lot) => (
-                      <tr key={lot.id} style={{ borderTop: "1px solid #e8e8e8" }}>
-                        <td style={{ ...tdStyle, color: "#111111", fontWeight: 600 }}>{lot.id}</td>
+                      <tr key={lot.id} style={{ borderTop: "1px solid var(--border-color)" }}>
+                        <td style={{ ...tdStyle, color: "var(--text-main)", fontWeight: 600 }}>{lot.id}</td>
                         <td style={tdStyle}>{lot.material}</td>
                         <td style={tdStyle}>{lot.sourceId || "—"}</td>
                         <td style={tdStyle}>{lot.facility}</td>
-                        <td style={{ ...tdStyle, color: "#111111", fontSize: 11, fontWeight: 700 }}>{lot.status}</td>
+                        <td style={{ ...tdStyle, color: "var(--text-main)", fontSize: 11, fontWeight: 700 }}>{lot.status}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-              <div style={{ ...sectionBoxStyle, borderColor: criticalBins.length ? "#111111" : "#e8e8e8" }}>
-                <div style={{ fontSize: "11px", color: criticalBins.length ? "#111111" : "#111111", fontWeight: "700", letterSpacing: "0.5px", marginBottom: "6px" }}>
+              <div style={{ ...sectionBoxStyle, borderColor: criticalBins.length ? "var(--text-main)" : "var(--border-color)" }}>
+                <div style={{ fontSize: "11px", color: criticalBins.length ? "var(--text-main)" : "var(--text-main)", fontWeight: "700", letterSpacing: "0.5px", marginBottom: "6px" }}>
                   {criticalBins.length ? "SİSTEM UYARISI" : "SİSTEM NORMAL"}
                 </div>
-                <div style={{ fontSize: "14px", fontWeight: "600", color: "#111111" }}>{t.aiForecastTitle}</div>
-                <p style={{ color: "#444444", fontSize: "13px", margin: "8px 0 0 0", lineHeight: "1.5" }}>
+                <div style={{ fontSize: "14px", fontWeight: "600", color: "var(--text-main)" }}>{t.aiForecastTitle}</div>
+                <p style={{ color: "var(--text-muted)", fontSize: "13px", margin: "8px 0 0 0", lineHeight: "1.5" }}>
                   {criticalBins.length
                     ? criticalBins.map((b) => `${b.location || b.bin_id} %${b.fill_percentage}`).join(" · ") + ". Yeni kabuller daha boş depolara kaydırılmalıdır."
                     : "Beş depoda kritik doluluk yok. Rotalama motoru mevcut lotları malzeme türüne göre dağıtmaya hazır."}
                   {hotSites.length ? ` Kritik toplama: ${hotSites.slice(0, 4).map((s) => `${s.id} %${s.fill}`).join(" · ")}.` : ""}
                   {managerUnread ? ` ${managerUnread} müdür mesajı bekliyor.` : ""}
                 </p>
-                <div style={{ marginTop: 16, fontSize: 12, color: "#444444" }}>
+                <div style={{ marginTop: 16, fontSize: 12, color: "var(--text-muted)" }}>
                   Bordro {formatTry(hr.gross)} (prim {formatTry(hr.bonus)}) · {hr.count} personel · su {(esgData.water_saved_liters || 0).toLocaleString("tr-TR")} L
                   {fx?.usdTry ? ` · USD ${Number(fx.usdTry).toFixed(2)} ₺` : ""}
                 </div>
@@ -1323,7 +1459,7 @@ export default function App() {
                   <button type="button" style={linkBtn} onClick={() => setTab("staff")}>Personel</button>
                   {canAccess(user.role, "hr") && <button type="button" style={linkBtn} onClick={() => setTab("hr")}>İnsan Kaynakları</button>}
                   <button type="button" style={linkBtn} onClick={() => setTab("fleet")}>Filo</button>
-                  <button type="button" style={linkBtn} onClick={() => setTab("waybills")}>İrsaliye</button>
+                  <button type="button" style={linkBtn} onClick={() => setTab("waybills")}>e-İrsaliye</button>
                   <button type="button" style={linkBtn} onClick={() => setTab("sales")}>Satış · Başer</button>
                   <button type="button" style={linkBtn} onClick={() => setTab("salesStar")}>Satış · Star</button>
                   <button type="button" style={linkBtn} onClick={() => setTab("priceCompare")}>1 kg karşılaştır</button>
@@ -1342,8 +1478,8 @@ export default function App() {
                 .slice(-6)
                 .reverse()
                 .map((m) => (
-                  <div key={`${m.kind}-${m.id}`} style={{ borderTop: "1px solid #e8e8e8", padding: "8px 0", fontSize: 12, color: "#111111" }}>
-                    <span style={{ color: m.kind === "müdür" ? "#111111" : m.kind === "depo" ? "#111111" : "#111111", fontWeight: 700 }}>{m.label}</span>
+                  <div key={`${m.kind}-${m.id}`} style={{ borderTop: "1px solid var(--border-color)", padding: "8px 0", fontSize: 12, color: "var(--text-main)" }}>
+                    <span style={{ color: m.kind === "müdür" ? "var(--text-main)" : m.kind === "depo" ? "var(--text-main)" : "var(--text-main)", fontWeight: 700 }}>{m.label}</span>
                     {" · "}{m.body}
                   </div>
                 ))}
@@ -1354,7 +1490,7 @@ export default function App() {
         {tab === "map" && (
           <div>
             <h2 style={pageHeaderStyle}>{t.map}</h2>
-            <p style={{ color: "#444444", fontSize: 12, margin: "8px 0 16px" }}>
+            <p style={{ color: "var(--text-muted)", fontSize: 12, margin: "8px 0 16px" }}>
               Büyük daireler 5 işleme deposu. Küçük noktalar 30 toplama. Yeşil pin Başer (Çerkezköy), mavi pin Star (Hadımköy).
             </p>
             <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: 16, minHeight: 440 }}>
@@ -1372,9 +1508,9 @@ export default function App() {
                 {selectedCollection ? (
                   <>
                     <h3 style={sectionTitleStyle}>{selectedCollection.id}</h3>
-                    <div style={{ fontSize: 12, color: "#111111", fontWeight: 700, marginBottom: 8 }}>{selectedCollection.material}</div>
-                    <div style={{ fontSize: 13, color: "#111111", marginBottom: 8 }}>{selectedCollection.name}</div>
-                    <div style={{ fontSize: 12, color: "#444444", lineHeight: 1.5 }}>
+                    <div style={{ fontSize: 12, color: "var(--text-main)", fontWeight: 700, marginBottom: 8 }}>{selectedCollection.material}</div>
+                    <div style={{ fontSize: 13, color: "var(--text-main)", marginBottom: 8 }}>{selectedCollection.name}</div>
+                    <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>
                       {selectedCollection.district} · {selectedCollection.address}<br />
                       Teslim: {selectedCollection.facility}<br />
                       Doluluk %{selectedCollection.fill ?? "-"} · okunmamış {unreadBySite[selectedCollection.id] || 0}
@@ -1391,19 +1527,19 @@ export default function App() {
                       Doluluk %{fillForDepot(selectedDepot, iotBins)}
                     </div>
                     {lotsForDepot(selectedDepot, lots).length ? lotsForDepot(selectedDepot, lots).map((lot) => (
-                      <div key={lot.id} style={{ borderTop: "1px solid #e8e8e8", padding: "8px 0", fontSize: 12, color: "#111111" }}>
-                        <div style={{ color: "#111111", fontWeight: 700 }}>{lot.id}</div>
+                      <div key={lot.id} style={{ borderTop: "1px solid var(--border-color)", padding: "8px 0", fontSize: 12, color: "var(--text-main)" }}>
+                        <div style={{ color: "var(--text-main)", fontWeight: 700 }}>{lot.id}</div>
                         {lot.material} · {lot.weight} kg · {lot.status}{lot.sourceId ? ` · ${lot.sourceId}` : ""}
                       </div>
-                    )) : <div style={{ color: "#444444", fontSize: 12 }}>Bu depoda lot yok.</div>}
-                    <div style={{ fontSize: 12, color: "#111111", marginTop: 10, lineHeight: 1.5 }}>
+                    )) : <div style={{ color: "var(--text-muted)", fontSize: 12 }}>Bu depoda lot yok.</div>}
+                    <div style={{ fontSize: 12, color: "var(--text-main)", marginTop: 10, lineHeight: 1.5 }}>
                       {managersForDepot(selectedDepot.id).map((m) => (
                         <div key={m.id}>{m.title} ({m.shift}): {m.name}</div>
                       ))}
                       {hr.byDepot.find((d) => d.tesis === selectedDepot.id)?.kisi || 0} personel
                     </div>
                     {perfById[selectedDepot.id] && (
-                      <div style={{ fontSize: 12, color: "#111111", marginTop: 8 }}>
+                      <div style={{ fontSize: 12, color: "var(--text-main)", marginTop: 8 }}>
                         Performans {perfById[selectedDepot.id].score} · {perfById[selectedDepot.id].label} · %{Math.round(perfById[selectedDepot.id].rate * 100)} prim
                       </div>
                     )}
@@ -1417,7 +1553,7 @@ export default function App() {
                 ) : (
                   <>
                     <h3 style={sectionTitleStyle}>Depo veya toplama alanı seçin</h3>
-                    <div style={{ color: "#444444", fontSize: 12 }}>Yeşil / sarı / kırmızı: depo doluluğu. Toplama noktaları aynı ölçek. Mesaj ve filo ataması sağ panelden yapılır.</div>
+                    <div style={{ color: "var(--text-muted)", fontSize: 12 }}>Yeşil / sarı / kırmızı: depo doluluğu. Toplama noktaları aynı ölçek. Mesaj ve filo ataması sağ panelden yapılır.</div>
                   </>
                 )}
               </div>
@@ -1428,7 +1564,7 @@ export default function App() {
         {tab === "collection" && (
           <div>
             <h2 style={pageHeaderStyle}>{t.collection}</h2>
-            <p style={{ color: "#444444", fontSize: 12, margin: "8px 0 16px" }}>
+            <p style={{ color: "var(--text-muted)", fontSize: 12, margin: "8px 0 16px" }}>
               {COLLECTION_POINTS.length} toplama alanı · her materyal için 2 yer · %{80}+ dolu {hotSites.length} yer · okunmamış saha mesajı {siteUnread}
             </p>
             <div style={{ marginBottom: 16, maxWidth: 360 }}>
@@ -1454,15 +1590,15 @@ export default function App() {
                 {selectedCollection ? (
                   <>
                     <h3 style={sectionTitleStyle}>{selectedCollection.name}</h3>
-                    <div style={{ fontSize: 12, color: "#111111", fontWeight: 700 }}>{selectedCollection.material}</div>
-                    <p style={{ fontSize: 12, color: "#444444", lineHeight: 1.6 }}>
+                    <div style={{ fontSize: 12, color: "var(--text-main)", fontWeight: 700 }}>{selectedCollection.material}</div>
+                    <p style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}>
                       {selectedCollection.district}<br />
                       {selectedCollection.address}<br />
                       Götürülecek tesis: {selectedCollection.facility}<br />
                       Doluluk %{selectedCollection.fill ?? "-"} · mesaj {unreadBySite[selectedCollection.id] || 0}
                     </p>
                     {siteContact(selectedCollection.id) && (
-                      <div style={{ fontSize: 12, color: "#444444", marginBottom: 10 }}>
+                      <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 10 }}>
                         Saha: {siteContact(selectedCollection.id).contact} · {siteContact(selectedCollection.id).phone}
                       </div>
                     )}
@@ -1472,7 +1608,7 @@ export default function App() {
                     </div>
                   </>
                 ) : (
-                  <div style={{ color: "#444444", fontSize: 12 }}>Haritadaki noktaya tıklayın veya aşağıdaki listeden seçin.</div>
+                  <div style={{ color: "var(--text-muted)", fontSize: 12 }}>Haritadaki noktaya tıklayın veya aşağıdaki listeden seçin.</div>
                 )}
               </div>
             </div>
@@ -1487,18 +1623,18 @@ export default function App() {
                       onClick={() => setSelectedCollection(site)}
                       style={{
                         textAlign: "left",
-                        background: selectedCollection?.id === site.id ? "#eeeeee" : "#ffffff",
-                        border: "1px solid #e8e8e8",
+                        background: selectedCollection?.id === site.id ? "var(--bg-muted)" : "var(--bg-surface)",
+                        border: "1px solid var(--border-color)",
                         borderRadius: 6,
                         padding: 12,
                         cursor: "pointer",
-                        color: "#111111"
+                        color: "var(--text-main)"
                       }}
                     >
-                      <div style={{ fontSize: 11, color: "#111111", fontWeight: 700 }}>{site.id} · {site.district}</div>
+                      <div style={{ fontSize: 11, color: "var(--text-main)", fontWeight: 700 }}>{site.id} · {site.district}</div>
                       <div style={{ fontSize: 13, fontWeight: 600, margin: "4px 0" }}>{site.name}</div>
-                      <div style={{ fontSize: 11, color: "#444444" }}>{site.address}</div>
-                      <div style={{ fontSize: 11, color: Number(site.fill) >= 80 ? "#111111" : "#444444", marginTop: 6 }}>
+                      <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{site.address}</div>
+                      <div style={{ fontSize: 11, color: Number(site.fill) >= 80 ? "var(--text-main)" : "var(--text-muted)", marginTop: 6 }}>
                         Teslim: {site.facility} · Doluluk %{site.fill}
                         {(unreadBySite[site.id] || 0) > 0 ? ` · ${unreadBySite[site.id]} mesaj` : ""}
                       </div>
@@ -1513,8 +1649,8 @@ export default function App() {
         {tab === "routes" && (
           <div>
             <h2 style={pageHeaderStyle}>{t.routes}</h2>
-            <p style={{ color: "#444444", fontSize: 12, margin: "8px 0 16px" }}>
-              Günlük tur: en yakın komşu sıra, çıkış FAC-01. 15 araçlı filo ve saha mesajları bu duraklara bağlanır.
+            <p style={{ color: "var(--text-muted)", fontSize: 12, margin: "8px 0 16px" }}>
+              Günlük tur: en yakın komşu sıra, çıkış FAC-01. {fleet.length} araçlı filo ve saha mesajları bu duraklara bağlanır.
             </p>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
               {COLLECTION_MATERIALS.map((mat) => {
@@ -1525,9 +1661,9 @@ export default function App() {
                     type="button"
                     onClick={() => setRouteMaterials((prev) => (on ? prev.filter((m) => m !== mat) : [...prev, mat]))}
                     style={{
-                      background: on ? "#ffffff" : "#f4f4f4",
-                      color: "#111111",
-                      border: "1px solid #d0d0d0",
+                      background: on ? "var(--bg-surface)" : "var(--bg-muted)",
+                      color: "var(--text-main)",
+                      border: "1px solid var(--border-color)",
                       borderRadius: 99,
                       padding: "6px 10px",
                       cursor: "pointer",
@@ -1550,10 +1686,10 @@ export default function App() {
               {dailyRoutes.map((route) => (
                 <div key={route.id} style={sectionBoxStyle}>
                   <h3 style={sectionTitleStyle}>{route.id} · {route.name}</h3>
-                  <div style={{ fontSize: 12, color: "#444444", marginBottom: 12 }}>{route.stops.length} durak · {route.km} km · {route.depot}</div>
+                  <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>{route.stops.length} durak · {route.km} km · {route.depot}</div>
                   {route.stops.map((stop) => (
-                    <div key={stop.id} style={{ borderTop: "1px solid #e8e8e8", padding: "8px 0", fontSize: 12, color: "#111111", display: "flex", justifyContent: "space-between", gap: 8 }}>
-                      <span><strong style={{ color: "#111111" }}>{stop.order}.</strong> {stop.id} {stop.name} · {stop.material} · %{stop.fill} · {stop.legKm} km</span>
+                    <div key={stop.id} style={{ borderTop: "1px solid var(--border-color)", padding: "8px 0", fontSize: 12, color: "var(--text-main)", display: "flex", justifyContent: "space-between", gap: 8 }}>
+                      <span><strong style={{ color: "var(--text-main)" }}>{stop.order}.</strong> {stop.id} {stop.name} · {stop.material} · %{stop.fill} · {stop.legKm} km</span>
                       <button type="button" style={{ ...linkBtn, padding: "4px 8px" }} onClick={() => { setFleetDestId(stop.id); setTab("fleet"); }}>Araç</button>
                     </div>
                   ))}
@@ -1566,18 +1702,69 @@ export default function App() {
         {tab === "fleet" && (
           <div>
             <h2 style={pageHeaderStyle}>{t.fleet}</h2>
-            <p style={{ color: "#444444", fontSize: 12, margin: "8px 0 16px" }}>
-              15 araç canlı konum · 15 şoför. Depodan çıkan tırlar Başer / Çerkezköy (yeşil) veya Star / Hadımköy (mavi) kabulüne gider. Görevde {taskedFleet.length} · sürülen {drivenKm} km · plan {plannedKm} km.
+            <p style={{ color: "var(--text-muted)", fontSize: 12, margin: "8px 0 16px" }}>
+              {fleet.length} araç OSM yol rotası (OSRM) izler. Yeni tır + GPS IMEI bu sayfadan kaydedilir. Görevde {taskedFleet.length} · sürülen {drivenKm} km · plan {plannedKm} km.
             </p>
             {hotSites.length ? (
-              <div style={{ ...sectionBoxStyle, marginBottom: 12, fontSize: 12, color: "#111111" }}>
+              <div style={{ ...sectionBoxStyle, marginBottom: 12, fontSize: 12, color: "var(--text-main)" }}>
                 Kritik toplama: {hotSites.slice(0, 8).map((s) => s.id).join(" · ")}
                 <button type="button" style={{ ...linkBtn, marginLeft: 10 }} onClick={() => { setFleetDestId(hotSites[0].id); }}>
                   İlk kritik hedefi seç
                 </button>
               </div>
             ) : null}
-            {dispatchNote && <div style={{ ...sectionBoxStyle, marginBottom: 12, color: "#111111", fontSize: 12 }}>{dispatchNote}</div>}
+            {dispatchNote && <div style={{ ...sectionBoxStyle, marginBottom: 12, color: "var(--text-main)", fontSize: 12 }}>{dispatchNote}</div>}
+            {fleetNote ? <div style={{ ...sectionBoxStyle, marginBottom: 12, color: "var(--text-main)", fontSize: 13 }}>{fleetNote}</div> : null}
+            <form onSubmit={registerVehicle} style={{ ...sectionBoxStyle, marginBottom: 16, display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10 }}>
+              <div>
+                <label style={labelStyle}>Plaka</label>
+                <input value={vehicleForm.plate} onChange={(e) => setVehicleForm({ ...vehicleForm, plate: e.target.value })} placeholder="34 WF 116" style={inputStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>Marka</label>
+                <input value={vehicleForm.brand} onChange={(e) => setVehicleForm({ ...vehicleForm, brand: e.target.value })} style={inputStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>Model</label>
+                <input value={vehicleForm.model} onChange={(e) => setVehicleForm({ ...vehicleForm, model: e.target.value })} style={inputStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>Şoför</label>
+                <input list="fleet-drivers" value={vehicleForm.driver} onChange={(e) => setVehicleForm({ ...vehicleForm, driver: e.target.value })} placeholder="Ad soyad" style={inputStyle} />
+                <datalist id="fleet-drivers">
+                  {staffRoster.filter((s) => s.kind === "şoför").map((s) => (
+                    <option key={s.id} value={s.name} />
+                  ))}
+                </datalist>
+              </div>
+              <div>
+                <label style={labelStyle}>Telefon</label>
+                <input value={vehicleForm.phone} onChange={(e) => setVehicleForm({ ...vehicleForm, phone: e.target.value })} placeholder="0532…" style={inputStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>Bağlı tesis</label>
+                <select value={vehicleForm.depotId} onChange={(e) => setVehicleForm({ ...vehicleForm, depotId: e.target.value })} style={inputStyle}>
+                  {DEPOTS.map((d) => <option key={d.id} value={d.id}>{d.id} {d.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={labelStyle}>Takip cihazı</label>
+                <select value={vehicleForm.trackerModel} onChange={(e) => setVehicleForm({ ...vehicleForm, trackerModel: e.target.value })} style={inputStyle}>
+                  {TRACKER_MODELS.map((m) => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={labelStyle}>IMEI</label>
+                <input value={vehicleForm.imei} onChange={(e) => setVehicleForm({ ...vehicleForm, imei: e.target.value })} placeholder="15 hane (boşsa üretilir)" style={inputStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>SIM</label>
+                <input value={vehicleForm.sim} onChange={(e) => setVehicleForm({ ...vehicleForm, sim: e.target.value })} placeholder="5xx…" style={inputStyle} />
+              </div>
+              <div style={{ display: "flex", alignItems: "flex-end" }}>
+                <button type="submit" style={{ ...btnPrimary, width: "100%" }}>Araç + GPS kaydet</button>
+              </div>
+            </form>
             <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr", gap: 16, minHeight: 440 }}>
               <div style={{ ...sectionBoxStyle, padding: 0, overflow: "hidden" }}>
                 <FleetMap vehicles={fleet} selectedId={selectedVehicleId} onSelect={setSelectedVehicleId} />
@@ -1589,13 +1776,18 @@ export default function App() {
                   return (
                     <>
                       <h3 style={sectionTitleStyle}>{v.plate}</h3>
-                      <div style={{ fontSize: 13, color: "#111111", marginBottom: 8 }}>{v.brand} {v.model}</div>
-                      <div style={{ fontSize: 12, color: "#444444", lineHeight: 1.6 }}>
+                      <div style={{ fontSize: 13, color: "var(--text-main)", marginBottom: 8 }}>{v.brand} {v.model}</div>
+                      <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}>
                         Sürücü: {v.driver}<br />
                         Tel: +{v.phone}<br />
+                        Tesis: {v.depotId || "—"}<br />
+                        Cihaz: {v.trackerModel || "—"} · {v.trackerStatus === "online" ? "çevrimiçi" : "offline"}<br />
+                        IMEI {v.imei || "—"} · SIM {v.sim || "—"}<br />
                         Konum: {v.lat.toFixed(5)}, {v.lng.toFixed(5)}<br />
                         Hız ~{v.speedKmh} km/s · ping {v.lastPing}<br />
                         Hedef: {v.destLabel || "atanmadı"}
+                        {v.destLat && !v.routePath?.length ? <><br />Karayolu rotası hesaplanıyor…</> : null}
+                        {v.routeDistanceKm ? <><br />Güzergâh {v.routeDistanceKm} km · kalan {Math.max(0, Math.round((v.routeDistanceKm - (v.routeKmDone || 0)) * 10) / 10)} km</> : null}
                       </div>
                       <label style={{ ...labelStyle, marginTop: 14 }}>Gidilecek yer</label>
                       <select value={fleetDestId} onChange={(e) => setFleetDestId(e.target.value)} style={inputStyle}>
@@ -1604,7 +1796,7 @@ export default function App() {
                       <button type="button" style={{ ...btnPrimary, width: "100%", marginTop: 10 }} onClick={() => sendFleetNotify("sms")}>
                         SMS ile telefona gönder
                       </button>
-                      <button type="button" style={{ ...btnPrimary, width: "100%", marginTop: 8, backgroundColor: "#ffffff" }} onClick={() => sendFleetNotify("wa")}>
+                      <button type="button" style={{ ...btnPrimary, width: "100%", marginTop: 8, backgroundColor: "var(--bg-surface)" }} onClick={() => sendFleetNotify("wa")}>
                         WhatsApp ile gönder
                       </button>
                       <button type="button" style={{ ...linkBtn, width: "100%", marginTop: 8 }} onClick={() => setTab("routes")}>Günlük tur durakları</button>
@@ -1621,18 +1813,25 @@ export default function App() {
                       >
                         Şoför özlüğü
                       </button>
+                      {!INITIAL_FLEET.some((s) => s.id === v.id) ? (
+                        <button type="button" style={{ ...linkBtn, width: "100%", marginTop: 6 }} onClick={() => retireVehicle(v.id)}>
+                          Filodan çıkar
+                        </button>
+                      ) : null}
                     </>
                   );
                 })()}
               </div>
             </div>
-            <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 16, backgroundColor: "#ffffff", border: "1px solid #e8e8e8", borderRadius: 6, overflow: "hidden" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 16, backgroundColor: "var(--bg-surface)", border: "1px solid var(--border-color)", borderRadius: 6, overflow: "hidden" }}>
               <thead>
-                <tr style={{ backgroundColor: "#e8e8e8" }}>
+                <tr style={{ backgroundColor: "var(--border-color)" }}>
                   <th style={thStyle}>PLAKA</th>
                   <th style={thStyle}>MARKA</th>
                   <th style={thStyle}>MODEL</th>
                   <th style={thStyle}>SÜRÜCÜ</th>
+                  <th style={thStyle}>IMEI</th>
+                  <th style={thStyle}>CİHAZ</th>
                   <th style={thStyle}>KONUM</th>
                   <th style={thStyle}>HEDEF</th>
                   <th style={thStyle}>KM</th>
@@ -1643,12 +1842,14 @@ export default function App() {
                   <tr
                     key={v.id}
                     onClick={() => setSelectedVehicleId(v.id)}
-                    style={{ borderTop: "1px solid #e8e8e8", cursor: "pointer", background: selectedVehicleId === v.id ? "#eeeeee" : "transparent" }}
+                    style={{ borderTop: "1px solid var(--border-color)", cursor: "pointer", background: selectedVehicleId === v.id ? "var(--bg-muted)" : "transparent" }}
                   >
-                    <td style={{ ...tdStyle, color: "#111111", fontWeight: 700 }}>{v.plate}</td>
+                    <td style={{ ...tdStyle, color: "var(--text-main)", fontWeight: 700 }}>{v.plate}</td>
                     <td style={tdStyle}>{v.brand}</td>
                     <td style={tdStyle}>{v.model}</td>
                     <td style={tdStyle}>{v.driver}</td>
+                    <td style={tdStyle}>{v.imei || "—"}</td>
+                    <td style={tdStyle}>{v.trackerModel || "—"}</td>
                     <td style={tdStyle}>{v.lat.toFixed(4)}, {v.lng.toFixed(4)}</td>
                     <td style={tdStyle}>{v.destLabel || "—"}</td>
                     <td style={tdStyle}>{Number(v.tripKm || 0).toFixed(1)}</td>
@@ -1662,8 +1863,8 @@ export default function App() {
         {tab === "inbox" && (
           <div>
             <h2 style={pageHeaderStyle}>{t.inbox}</h2>
-            <p style={{ color: "#444444", fontSize: 12, margin: "8px 0 16px" }}>
-              5 depo sahibinden gelen talepler. 10 müdür için ayrı <button type="button" onClick={() => setTab("managers")} style={{ background: "none", border: "none", color: "#111111", cursor: "pointer", padding: 0, fontSize: 12 }}>Müdürler</button> sekmesi.
+            <p style={{ color: "var(--text-muted)", fontSize: 12, margin: "8px 0 16px" }}>
+              5 depo sahibinden gelen talepler. 10 müdür için ayrı <button type="button" onClick={() => setTab("managers")} style={{ background: "none", border: "none", color: "var(--text-main)", cursor: "pointer", padding: 0, fontSize: 12 }}>Müdürler</button> sekmesi.
             </p>
             <div style={{ display: "grid", gridTemplateColumns: "280px 1fr", gap: 16, minHeight: 440 }}>
               <div style={{ ...sectionBoxStyle, padding: 0, overflow: "auto" }}>
@@ -1677,21 +1878,21 @@ export default function App() {
                       width: "100%",
                       textAlign: "left",
                       padding: "12px 14px",
-                      background: inboxDepot === th.depotId ? "#eeeeee" : "transparent",
+                      background: inboxDepot === th.depotId ? "var(--bg-muted)" : "transparent",
                       border: "none",
-                      borderBottom: "1px solid #e8e8e8",
-                      color: "#111111",
+                      borderBottom: "1px solid var(--border-color)",
+                      color: "var(--text-main)",
                       cursor: "pointer"
                     }}
                   >
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                       <span style={{ fontSize: 12, fontWeight: 700 }}>{th.depot}</span>
                       {th.unread > 0 && (
-                        <span style={{ background: "#ffffff", color: "#111111", borderRadius: 99, fontSize: 10, padding: "2px 7px", fontWeight: 700 }}>{th.unread}</span>
+                        <span style={{ background: "var(--bg-surface)", color: "var(--text-main)", borderRadius: 99, fontSize: 10, padding: "2px 7px", fontWeight: 700 }}>{th.unread}</span>
                       )}
                     </div>
-                    <div style={{ fontSize: 11, color: "#444444", marginTop: 4 }}>{th.owner}</div>
-                    <div style={{ fontSize: 11, color: "#444444", marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>{th.owner}</div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {th.last?.body || "Henüz mesaj yok"}
                     </div>
                   </button>
@@ -1704,7 +1905,7 @@ export default function App() {
                   return (
                     <>
                       <h3 style={sectionTitleStyle}>{owner.depot}</h3>
-                      <div style={{ fontSize: 12, color: "#444444", marginTop: -8, marginBottom: 12 }}>
+                      <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: -8, marginBottom: 12 }}>
                         Sahip: {owner.owner} · {owner.phone}
                       </div>
                       <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
@@ -1718,20 +1919,20 @@ export default function App() {
                             style={{
                               alignSelf: m.direction === "out" ? "flex-end" : "flex-start",
                               maxWidth: "85%",
-                              background: m.direction === "out" ? "#eeeeee" : "#e8e8e8",
-                              border: "1px solid #d0d0d0",
+                              background: m.direction === "out" ? "var(--bg-muted)" : "var(--border-color)",
+                              border: "1px solid var(--border-color)",
                               borderRadius: 8,
                               padding: "10px 12px",
                               fontSize: 13,
-                              color: "#111111"
+                              color: "var(--text-main)"
                             }}
                           >
-                            <div style={{ fontSize: 10, color: "#444444", marginBottom: 4 }}>
+                            <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 4 }}>
                               {m.direction === "in" ? owner.owner : "WasteFlow"} · {m.time}
                             </div>
                             {m.body}
                           </div>
-                        )) : <div style={{ color: "#444444", fontSize: 12 }}>Bu depodan mesaj yok.</div>}
+                        )) : <div style={{ color: "var(--text-muted)", fontSize: 12 }}>Bu depodan mesaj yok.</div>}
                       </div>
                       <form onSubmit={sendInboxReply} style={{ display: "flex", gap: 8, marginTop: 12 }}>
                         <input
@@ -1753,7 +1954,7 @@ export default function App() {
         {tab === "siteInbox" && (
           <div>
             <h2 style={pageHeaderStyle}>{t.siteInbox}</h2>
-            <p style={{ color: "#444444", fontSize: 12, margin: "8px 0 16px" }}>
+            <p style={{ color: "var(--text-muted)", fontSize: 12, margin: "8px 0 16px" }}>
               30 toplama alanının saha sorumlularından gelen talepler. Okunmamış: {siteUnread}. Depo sahipleri için Depo Mesajları sekmesi ({inboxUnread}).
             </p>
             <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: 16, minHeight: 440 }}>
@@ -1768,22 +1969,22 @@ export default function App() {
                       width: "100%",
                       textAlign: "left",
                       padding: "12px 14px",
-                      background: inboxSite === th.siteId ? "#eeeeee" : "transparent",
+                      background: inboxSite === th.siteId ? "var(--bg-muted)" : "transparent",
                       border: "none",
-                      borderBottom: "1px solid #e8e8e8",
-                      color: "#111111",
+                      borderBottom: "1px solid var(--border-color)",
+                      color: "var(--text-main)",
                       cursor: "pointer"
                     }}
                   >
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                       <span style={{ fontSize: 12, fontWeight: 700 }}>{th.siteId}</span>
                       {th.unread > 0 && (
-                        <span style={{ background: "#ffffff", color: "#111111", borderRadius: 99, fontSize: 10, padding: "2px 7px", fontWeight: 700 }}>{th.unread}</span>
+                        <span style={{ background: "var(--bg-surface)", color: "var(--text-main)", borderRadius: 99, fontSize: 10, padding: "2px 7px", fontWeight: 700 }}>{th.unread}</span>
                       )}
                     </div>
-                    <div style={{ fontSize: 11, color: "#111111", marginTop: 2 }}>{th.material}</div>
-                    <div style={{ fontSize: 11, color: "#444444", marginTop: 2 }}>{th.contact} · {th.district}</div>
-                    <div style={{ fontSize: 11, color: "#444444", marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <div style={{ fontSize: 11, color: "var(--text-main)", marginTop: 2 }}>{th.material}</div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>{th.contact} · {th.district}</div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {th.last?.body || "Henüz mesaj yok"}
                     </div>
                   </button>
@@ -1796,7 +1997,7 @@ export default function App() {
                   return (
                     <>
                       <h3 style={sectionTitleStyle}>{site.siteId} · {site.name}</h3>
-                      <div style={{ fontSize: 12, color: "#444444", marginTop: -8, marginBottom: 12 }}>
+                      <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: -8, marginBottom: 12 }}>
                         {site.material} · {site.district}<br />
                         Saha: {site.contact} · {site.phone}<br />
                         {site.address}
@@ -1812,20 +2013,20 @@ export default function App() {
                             style={{
                               alignSelf: m.direction === "out" ? "flex-end" : "flex-start",
                               maxWidth: "85%",
-                              background: m.direction === "out" ? "#eeeeee" : "#e8e8e8",
-                              border: "1px solid #d0d0d0",
+                              background: m.direction === "out" ? "var(--bg-muted)" : "var(--border-color)",
+                              border: "1px solid var(--border-color)",
                               borderRadius: 8,
                               padding: "10px 12px",
                               fontSize: 13,
-                              color: "#111111"
+                              color: "var(--text-main)"
                             }}
                           >
-                            <div style={{ fontSize: 10, color: "#444444", marginBottom: 4 }}>
+                            <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 4 }}>
                               {m.direction === "in" ? site.contact : "WasteFlow"} · {m.time}
                             </div>
                             {m.body}
                           </div>
-                        )) : <div style={{ color: "#444444", fontSize: 12 }}>Bu toplama alanından mesaj yok. Soldan başka bir COL seçin veya ilk yanıtı siz yazın.</div>}
+                        )) : <div style={{ color: "var(--text-muted)", fontSize: 12 }}>Bu toplama alanından mesaj yok. Soldan başka bir COL seçin veya ilk yanıtı siz yazın.</div>}
                       </div>
                       <form onSubmit={sendSiteReply} style={{ display: "flex", gap: 8, marginTop: 12 }}>
                         <input
@@ -1847,7 +2048,7 @@ export default function App() {
         {tab === "managers" && (
           <div>
             <h2 style={pageHeaderStyle}>{t.managers}</h2>
-            <p style={{ color: "#444444", fontSize: 12, margin: "8px 0 16px" }}>
+            <p style={{ color: "var(--text-muted)", fontSize: 12, margin: "8px 0 16px" }}>
               Her depoda 2 müdür (gündüz + gece) · 10 kişi. Personel özlük bilgisi ayrı sekmede. Okunmamış: {managerUnread}
             </p>
             <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: 16, minHeight: 440 }}>
@@ -1862,21 +2063,21 @@ export default function App() {
                       width: "100%",
                       textAlign: "left",
                       padding: "12px 14px",
-                      background: inboxManager === th.id ? "#eeeeee" : "transparent",
+                      background: inboxManager === th.id ? "var(--bg-muted)" : "transparent",
                       border: "none",
-                      borderBottom: "1px solid #e8e8e8",
-                      color: "#111111",
+                      borderBottom: "1px solid var(--border-color)",
+                      color: "var(--text-main)",
                       cursor: "pointer"
                     }}
                   >
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                       <span style={{ fontSize: 12, fontWeight: 700 }}>{th.name}</span>
                       {th.unread > 0 && (
-                        <span style={{ background: "#ffffff", color: "#111111", borderRadius: 99, fontSize: 10, padding: "2px 7px", fontWeight: 700 }}>{th.unread}</span>
+                        <span style={{ background: "var(--bg-surface)", color: "var(--text-main)", borderRadius: 99, fontSize: 10, padding: "2px 7px", fontWeight: 700 }}>{th.unread}</span>
                       )}
                     </div>
-                    <div style={{ fontSize: 11, color: "#111111", marginTop: 2 }}>{th.depot} · {th.title}</div>
-                    <div style={{ fontSize: 11, color: "#444444", marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <div style={{ fontSize: 11, color: "var(--text-main)", marginTop: 2 }}>{th.depot} · {th.title}</div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {th.last?.body || "Henüz mesaj yok"}
                     </div>
                   </button>
@@ -1889,7 +2090,7 @@ export default function App() {
                   return (
                     <>
                       <h3 style={sectionTitleStyle}>{mgr.name}</h3>
-                      <div style={{ fontSize: 12, color: "#444444", marginTop: -8, marginBottom: 12 }}>
+                      <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: -8, marginBottom: 12 }}>
                         {mgr.title} · {mgr.shift}<br />
                         {mgr.depot} · {mgr.phone}<br />
                         {mgr.address}
@@ -1905,20 +2106,20 @@ export default function App() {
                             style={{
                               alignSelf: m.direction === "out" ? "flex-end" : "flex-start",
                               maxWidth: "85%",
-                              background: m.direction === "out" ? "#eeeeee" : "#e8e8e8",
-                              border: "1px solid #d0d0d0",
+                              background: m.direction === "out" ? "var(--bg-muted)" : "var(--border-color)",
+                              border: "1px solid var(--border-color)",
                               borderRadius: 8,
                               padding: "10px 12px",
                               fontSize: 13,
-                              color: "#111111"
+                              color: "var(--text-main)"
                             }}
                           >
-                            <div style={{ fontSize: 10, color: "#444444", marginBottom: 4 }}>
+                            <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 4 }}>
                               {m.direction === "in" ? mgr.name : "WasteFlow"} · {m.time}
                             </div>
                             {m.body}
                           </div>
-                        )) : <div style={{ color: "#444444", fontSize: 12 }}>Bu müdürden mesaj yok.</div>}
+                        )) : <div style={{ color: "var(--text-muted)", fontSize: 12 }}>Bu müdürden mesaj yok.</div>}
                       </div>
                       <form onSubmit={sendManagerReply} style={{ display: "flex", gap: 8, marginTop: 12 }}>
                         <input
@@ -1940,7 +2141,7 @@ export default function App() {
         {tab === "staff" && (
           <div>
             <h2 style={pageHeaderStyle}>{t.staff}</h2>
-            <p style={{ color: "#444444", fontSize: 12, margin: "8px 0 16px" }}>
+            <p style={{ color: "var(--text-muted)", fontSize: 12, margin: "8px 0 16px" }}>
               {staffRoster.length} personel · {hr.patrons} patron · {hr.managers} müdür · {hr.drivers} şoför · {staffRoster.length - hr.managers - hr.drivers - hr.patrons} saha/idari.
               {canAccess(user.role, "hr") ? " İşe alım / çıkış İnsan Kaynakları sekmesinde." : ""}
             </p>
@@ -1962,7 +2163,7 @@ export default function App() {
               <div style={{ ...sectionBoxStyle, padding: 0, maxHeight: 520, overflow: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead>
-                    <tr style={{ backgroundColor: "#e8e8e8" }}>
+                    <tr style={{ backgroundColor: "var(--border-color)" }}>
                       <th style={thStyle}>AD</th>
                       <th style={thStyle}>MEVKİ</th>
                       <th style={thStyle}>DEPO</th>
@@ -1975,13 +2176,13 @@ export default function App() {
                       <tr
                         key={p.id}
                         onClick={() => setSelectedStaffId(p.id)}
-                        style={{ borderTop: "1px solid #e8e8e8", cursor: "pointer", background: selectedStaff?.id === p.id ? "#eeeeee" : "transparent" }}
+                        style={{ borderTop: "1px solid var(--border-color)", cursor: "pointer", background: selectedStaff?.id === p.id ? "var(--bg-muted)" : "transparent" }}
                       >
-                        <td style={{ ...tdStyle, color: "#111111", fontWeight: 600 }}>{p.name}</td>
+                        <td style={{ ...tdStyle, color: "var(--text-main)", fontWeight: 600 }}>{p.name}</td>
                         <td style={tdStyle}>{p.title}</td>
                         <td style={tdStyle}>{p.depotId}</td>
                         <td style={tdStyle}>{formatTry(p.salary)}</td>
-                        <td style={{ ...tdStyle, color: "#111111" }}>{formatTry(payFor(p, perfById).bonus)}</td>
+                        <td style={{ ...tdStyle, color: "var(--text-main)" }}>{formatTry(payFor(p, perfById).bonus)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1991,7 +2192,7 @@ export default function App() {
                 {selectedStaff && (
                   <>
                     <h3 style={sectionTitleStyle}>{selectedStaff.name}</h3>
-                    <div style={{ fontSize: 13, color: "#111111", lineHeight: 1.8 }}>
+                    <div style={{ fontSize: 13, color: "var(--text-main)", lineHeight: 1.8 }}>
                       {selectedStaff.id} · {selectedStaff.gender} · {selectedStaff.age} yaş<br />
                       Mevki: {selectedStaff.title}{selectedStaff.shift ? ` · ${selectedStaff.shift}` : ""}<br />
                       Çalıştığı yer: {selectedStaff.depot}<br />
@@ -2012,7 +2213,7 @@ export default function App() {
                         <>
                           <button type="button" style={linkBtn} onClick={() => setTab("hr")}>İşe al / çıkar</button>
                           {selectedStaff.kind !== "patron" && (
-                            <button type="button" style={{ ...linkBtn, borderColor: "#111111", color: "#111111" }} onClick={() => fireStaff(selectedStaff.id)}>
+                            <button type="button" style={{ ...linkBtn, borderColor: "var(--text-main)", color: "var(--text-main)" }} onClick={() => fireStaff(selectedStaff.id)}>
                               İşten çıkar
                             </button>
                           )}
@@ -2029,13 +2230,13 @@ export default function App() {
         {tab === "hr" && (
           <div>
             <h2 style={pageHeaderStyle}>{t.hr}</h2>
-            <p style={{ color: "#444444", fontSize: 12, margin: "8px 0 16px" }}>
+            <p style={{ color: "var(--text-muted)", fontSize: 12, margin: "8px 0 16px" }}>
               İşe alım, çıkış ve depo primi. Maaş {formatTry(hr.payroll)} · prim {formatTry(hr.bonus)} · toplam {formatTry(hr.gross)}.
             </p>
-            {hrNote ? <div style={{ ...sectionBoxStyle, marginBottom: 12, color: "#111111", fontSize: 13 }}>{hrNote}</div> : null}
+            {hrNote ? <div style={{ ...sectionBoxStyle, marginBottom: 12, color: "var(--text-main)", fontSize: 13 }}>{hrNote}</div> : null}
             <div style={{ ...sectionBoxStyle, marginBottom: 16 }}>
               <h3 style={sectionTitleStyle}>Depo performans primi</h3>
-              <p style={{ color: "#444444", fontSize: 12, marginTop: -6 }}>Hacim (40) + işlenen lot (40) + doluluk (20) + boş/hazır depo. Karantina ve %85+ doluluk primi düşürür. A ≥88 → %18 · B ≥75 → %12 · C ≥60 → %7 · D ≥40 → %3.</p>
+              <p style={{ color: "var(--text-muted)", fontSize: 12, marginTop: -6 }}>Hacim (40) + işlenen lot (40) + doluluk (20) + boş/hazır depo. Karantina ve %85+ doluluk primi düşürür. A ≥88 → %18 · B ≥75 → %12 · C ≥60 → %7 · D ≥40 → %3.</p>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                 <thead>
                   <tr>
@@ -2052,14 +2253,14 @@ export default function App() {
                   {depotPerf.map((d) => {
                     const row = hr.byDepot.find((x) => x.tesis === d.id);
                     return (
-                      <tr key={d.id} style={{ borderTop: "1px solid #e8e8e8" }}>
+                      <tr key={d.id} style={{ borderTop: "1px solid var(--border-color)" }}>
                         <td style={tdStyle}>{d.id} {d.name}</td>
-                        <td style={{ ...tdStyle, fontWeight: 700, color: d.score >= 75 ? "#111111" : d.score < 45 ? "#111111" : "#111111" }}>{d.score}</td>
+                        <td style={{ ...tdStyle, fontWeight: 700, color: d.score >= 75 ? "var(--text-main)" : d.score < 45 ? "var(--text-main)" : "var(--text-main)" }}>{d.score}</td>
                         <td style={tdStyle}>{d.band} · {d.label}</td>
                         <td style={tdStyle}>%{Math.round(d.rate * 100)}</td>
                         <td style={tdStyle}>{d.kg} kg</td>
                         <td style={tdStyle}>%{d.fill}</td>
-                        <td style={{ ...tdStyle, color: "#111111" }}>{formatTry(row?.prim || 0)}</td>
+                        <td style={{ ...tdStyle, color: "var(--text-main)" }}>{formatTry(row?.prim || 0)}</td>
                       </tr>
                     );
                   })}
@@ -2136,18 +2337,18 @@ export default function App() {
                     Seed kadro
                   </button>
                 </div>
-                <p style={{ color: "#444444", fontSize: 12, marginTop: 0 }}>Listeden seçip işten çıkar. Patron kilitlidir.</p>
+                <p style={{ color: "var(--text-muted)", fontSize: 12, marginTop: 0 }}>Listeden seçip işten çıkar. Patron kilitlidir.</p>
                 <div style={{ maxHeight: 420, overflow: "auto" }}>
                   {staffRoster.map((p) => (
-                    <div key={p.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", borderTop: "1px solid #e8e8e8", padding: "8px 0" }}>
-                      <button type="button" onClick={() => setSelectedStaffId(p.id)} style={{ background: "none", border: "none", color: "#111111", textAlign: "left", cursor: "pointer", flex: 1, padding: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: p.id === selectedStaffId ? "#111111" : "#111111" }}>{p.name}</div>
-                        <div style={{ fontSize: 11, color: "#444444" }}>{p.id} · {p.title} · {p.depotId} · {formatTry(p.salary)} + {formatTry(payFor(p, perfById).bonus)}</div>
+                    <div key={p.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", borderTop: "1px solid var(--border-color)", padding: "8px 0" }}>
+                      <button type="button" onClick={() => setSelectedStaffId(p.id)} style={{ background: "none", border: "none", color: "var(--text-main)", textAlign: "left", cursor: "pointer", flex: 1, padding: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: p.id === selectedStaffId ? "var(--text-main)" : "var(--text-main)" }}>{p.name}</div>
+                        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{p.id} · {p.title} · {p.depotId} · {formatTry(p.salary)} + {formatTry(payFor(p, perfById).bonus)}</div>
                       </button>
                       {p.kind === "patron" ? (
-                        <span style={{ fontSize: 11, color: "#444444" }}>kilitli</span>
+                        <span style={{ fontSize: 11, color: "var(--text-muted)" }}>kilitli</span>
                       ) : (
-                        <button type="button" style={{ ...linkBtn, borderColor: "#111111", color: "#111111", flexShrink: 0 }} onClick={() => fireStaff(p.id)}>
+                        <button type="button" style={{ ...linkBtn, borderColor: "var(--text-main)", color: "var(--text-main)", flexShrink: 0 }} onClick={() => fireStaff(p.id)}>
                           Çıkar
                         </button>
                       )}
@@ -2162,8 +2363,8 @@ export default function App() {
         {tab === "reports" && (
           <div>
             <h2 style={pageHeaderStyle}>{t.reports}</h2>
-            <p style={{ color: "#444444", fontSize: 13, margin: "8px 0 20px" }}>
-              ESG, kadro ({hr.count} kişi / {formatTry(hr.gross)} maaş+prim), 5 depo × 2 müdür, lot P&L ve canlı kur.
+            <p style={{ color: "var(--text-muted)", fontSize: 13, margin: "8px 0 20px" }}>
+              ESG, kadro ({hr.count} kişi / {formatTry(hr.gross)} aylık maaş+prim), lot P&L. Gelir yalnızca kesilmiş satış fişidir; stok satılmış sayılmaz. Marj ~%{econ.marginPct} (hurda ticareti).
             </p>
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
               <button type="button" style={btnPrimary} onClick={() => downloadExcelReport({ lots: lots.map((l) => ({ ...l, ewc: ewcOf(l.material).code })), bins: iotBins, esg: esgData, metrics, econ: { ...econ, mass, license: LICENSE_NOTICE }, fx })}>
@@ -2171,12 +2372,12 @@ export default function App() {
               </button>
               <button
                 type="button"
-                style={{ ...btnPrimary, backgroundColor: "#d0d0d0" }}
+                style={{ ...btnPrimary, backgroundColor: "var(--border-color)" }}
                 onClick={() => printPdfReport({ lots, bins: iotBins, esg: esgData, metrics, econ: { ...econ, mass, license: LICENSE_NOTICE }, fx })}
               >
                 PDF yazdır
               </button>
-              <button type="button" style={{ ...btnPrimary, backgroundColor: "#ffffff" }} onClick={() => printCarbonCertificate({ esg: esgData, mass, user: user.name })}>
+              <button type="button" style={{ ...btnPrimary, backgroundColor: "var(--bg-surface)" }} onClick={() => printCarbonCertificate({ esg: esgData, mass, user: user.name })}>
                 Karbon sertifikası
               </button>
             </div>
@@ -2186,62 +2387,64 @@ export default function App() {
                   {fx?.live ? "CANLI KUR · TCMB / ECB" : "SON BİLİNEN KUR"}
                   {fxBusy ? " · güncelleniyor" : ""}
                 </div>
-                <div style={{ fontSize: 22, fontWeight: 700, color: "#111111", marginTop: 8 }}>
+                <div style={{ fontSize: 22, fontWeight: 700, color: "var(--text-main)", marginTop: 8 }}>
                   1 USD = {fx?.usdTry ? Number(fx.usdTry).toLocaleString("tr-TR", { minimumFractionDigits: 4, maximumFractionDigits: 4 }) : "—"} ₺
                 </div>
-                <div style={{ fontSize: 12, color: "#444444", marginTop: 6 }}>{fx?.source || "kaynak bekleniyor"}</div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>{fx?.source || "kaynak bekleniyor"}</div>
               </div>
               <div style={sectionBoxStyle}>
                 <div style={{ fontSize: 11, color: fx?.live ? "#1B6B4A" : "#C62828", fontWeight: 700 }}>{fx?.live ? "CANLI KUR" : "SON BİLİNEN KUR"}</div>
-                <div style={{ fontSize: 22, fontWeight: 700, color: "#111111", marginTop: 8 }}>
+                <div style={{ fontSize: 22, fontWeight: 700, color: "var(--text-main)", marginTop: 8 }}>
                   1 EUR = {fx?.eurTry ? Number(fx.eurTry).toLocaleString("tr-TR", { minimumFractionDigits: 4, maximumFractionDigits: 4 }) : "—"} ₺
                 </div>
-                <div style={{ fontSize: 12, color: "#444444", marginTop: 6 }}>
+                <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>
                   {fx?.updatedAt ? new Date(fx.updatedAt).toLocaleString("tr-TR") : "henüz çekilmedi"} · 30 sn · {fx?.source || ""}
                 </div>
               </div>
               <div style={sectionBoxStyle}>
-                <div style={{ fontSize: 11, color: "#111111", fontWeight: 700 }}>FİLO YAKIT</div>
-                <div style={{ fontSize: 18, fontWeight: 700, color: "#111111", marginTop: 8 }}>{econ.fleetKm} km · {econ.fuelTry.toLocaleString("tr-TR")} ₺</div>
-                <div style={{ fontSize: 12, color: "#444444", marginTop: 6 }}>{econ.dieselPerKm} ₺/km · plan {plannedKm} + sürülen {drivenKm}</div>
+                <div style={{ fontSize: 11, color: "var(--text-main)", fontWeight: 700 }}>FİLO YAKIT</div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text-main)", marginTop: 8 }}>{econ.fleetKm} km · {econ.fuelTry.toLocaleString("tr-TR")} ₺</div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>{econ.dieselPerKm} ₺/km · plan {plannedKm} + sürülen {drivenKm}</div>
               </div>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginTop: 12 }}>
               <div style={sectionBoxStyle}>
-                <div style={{ fontSize: 11, color: "#111111", fontWeight: 700 }}>BORDRO</div>
-                <div style={{ fontSize: 18, fontWeight: 700, color: "#111111", marginTop: 8 }}>{formatTry(hr.gross)}</div>
-                <div style={{ fontSize: 12, color: "#444444", marginTop: 6 }}>maaş {formatTry(hr.payroll)} · prim {formatTry(hr.bonus)}</div>
+                <div style={{ fontSize: 11, color: "var(--text-main)", fontWeight: 700 }}>BORDRO</div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text-main)", marginTop: 8 }}>{formatTry(hr.gross)}</div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>maaş {formatTry(hr.payroll)} · prim {formatTry(hr.bonus)}</div>
               </div>
               <div style={sectionBoxStyle}>
-                <div style={{ fontSize: 11, color: "#444444" }}>GELİR</div>
-                <div style={{ color: "#111111", fontWeight: 700, marginTop: 6 }}>{formatMoney(econ.totals.revenue.try, "TRY")}</div>
-                <div style={{ fontSize: 12, color: "#444444" }}>{formatMoney(econ.totals.revenue.usd, "USD")} · {formatMoney(econ.totals.revenue.eur, "EUR")}</div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>HAFTALIK SATIŞ GELİRİ</div>
+                <div style={{ color: "var(--text-main)", fontWeight: 700, marginTop: 6 }}>{formatMoney(econ.totals.revenue.try, "TRY")}</div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{formatMoney(econ.totals.revenue.usd, "USD")} · {formatMoney(econ.totals.revenue.eur, "EUR")}</div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>günlük ort. {formatMoney(econ.totals.dailyRevenue.try, "TRY")} ({formatMoney(econ.totals.dailyRevenue.usd, "USD")}) · {econ.soldKg.toLocaleString("tr-TR")} kg fatura</div>
               </div>
               <div style={sectionBoxStyle}>
-                <div style={{ fontSize: 11, color: "#111111" }}>BAŞER SATIŞI</div>
-                <div style={{ color: "#111111", fontWeight: 700, marginTop: 6 }}>{formatTry(salesBook.amount)}</div>
-                <div style={{ fontSize: 12, color: "#444444" }}>{salesBook.kg.toLocaleString("tr-TR")} kg · {salesBook.count} sevk · Çerkezköy</div>
+                <div style={{ fontSize: 11, color: "var(--text-main)" }}>BAŞER SATIŞI</div>
+                <div style={{ color: "var(--text-main)", fontWeight: 700, marginTop: 6 }}>{formatTry(salesBook.amount)}</div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{salesBook.kg.toLocaleString("tr-TR")} kg · {salesBook.count} sevk · Çerkezköy</div>
               </div>
               <div style={sectionBoxStyle}>
-                <div style={{ fontSize: 11, color: "#111111" }}>STAR SATIŞI</div>
-                <div style={{ color: "#111111", fontWeight: 700, marginTop: 6 }}>{formatTry(starBook.amount)}</div>
-                <div style={{ fontSize: 12, color: "#444444" }}>{starBook.kg.toLocaleString("tr-TR")} kg · {starBook.count} sevk · Hadımköy</div>
+                <div style={{ fontSize: 11, color: "var(--text-main)" }}>STAR SATIŞI</div>
+                <div style={{ color: "var(--text-main)", fontWeight: 700, marginTop: 6 }}>{formatTry(starBook.amount)}</div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{starBook.kg.toLocaleString("tr-TR")} kg · {starBook.count} sevk · Hadımköy</div>
               </div>
               <div style={sectionBoxStyle}>
-                <div style={{ fontSize: 11, color: "#444444" }}>GİDER</div>
-                <div style={{ color: "#111111", fontWeight: 700, marginTop: 6 }}>{formatMoney(econ.totals.cost.try, "TRY")}</div>
-                <div style={{ fontSize: 12, color: "#444444" }}>{formatMoney(econ.totals.cost.usd, "USD")} · {formatMoney(econ.totals.cost.eur, "EUR")}</div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>MALİYET (COGS + AYIRMA + YAKIT)</div>
+                <div style={{ color: "var(--text-main)", fontWeight: 700, marginTop: 6 }}>{formatMoney(econ.totals.cost.try, "TRY")}</div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{formatMoney(econ.totals.cost.usd, "USD")} · {formatMoney(econ.totals.cost.eur, "EUR")}</div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>Bordro ayrı tutulur: aylık {formatTry(hr.payroll)} (holding kadrosu, günlük P&L’ye eklenmez)</div>
               </div>
               <div style={sectionBoxStyle}>
-                <div style={{ fontSize: 11, color: "#444444" }}>USD / EUR ÇAPRAZ</div>
-                <div style={{ color: "#111111", fontWeight: 700, marginTop: 6 }}>
+                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>USD / EUR ÇAPRAZ</div>
+                <div style={{ color: "var(--text-main)", fontWeight: 700, marginTop: 6 }}>
                   {fx?.usdTry && fx?.eurTry ? (fx.usdTry / fx.eurTry).toLocaleString("tr-TR", { minimumFractionDigits: 4, maximumFractionDigits: 4 }) : "—"}
                 </div>
-                <div style={{ fontSize: 12, color: "#444444" }}>1 USD = ? EUR</div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>1 USD = ? EUR</div>
               </div>
             </div>
             <div style={{ ...sectionBoxStyle, marginTop: 16 }}>
-              <h3 style={sectionTitleStyle}>Materyal gelir / maliyet (₺, $, €)</h3>
+              <h3 style={sectionTitleStyle}>Satılan materyal ({econ.period}) — brüt marj %{econ.marginPct}</h3>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                 <thead>
                   <tr>
@@ -2260,13 +2463,13 @@ export default function App() {
                     const usd = fx?.usdTry ? row.margin / fx.usdTry : 0;
                     const eur = fx?.eurTry ? row.margin / fx.eurTry : 0;
                     return (
-                      <tr key={row.material} style={{ borderTop: "1px solid #e8e8e8" }}>
+                      <tr key={row.material} style={{ borderTop: "1px solid var(--border-color)" }}>
                         <td style={tdStyle}>{row.material}</td>
                         <td style={tdStyle}>{row.kg}</td>
                         <td style={tdStyle}>{row.price}</td>
                         <td style={tdStyle}>{row.revenue.toLocaleString("tr-TR")}</td>
                         <td style={tdStyle}>{row.cost.toLocaleString("tr-TR")}</td>
-                        <td style={{ ...tdStyle, color: row.margin >= 0 ? "#111111" : "#111111" }}>{row.margin.toLocaleString("tr-TR")}</td>
+                        <td style={{ ...tdStyle, color: row.margin >= 0 ? "var(--text-main)" : "var(--text-main)" }}>{row.margin.toLocaleString("tr-TR")}</td>
                         <td style={tdStyle}>{usd.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                         <td style={tdStyle}>{eur.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                       </tr>
@@ -2282,13 +2485,13 @@ export default function App() {
         {tab === "operations" && (
           <div>
             <h2 style={pageHeaderStyle}>{t.operations}</h2>
-            <p style={{ color: "#444444", fontSize: 12, margin: "8px 0 0" }}>
+            <p style={{ color: "var(--text-muted)", fontSize: 12, margin: "8px 0 0" }}>
               16 materyal · kaynak COL · önerilen tesis. Kadro 120 kişi; müdür onayı Müdürler sekmesinde.
             </p>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", marginTop: "20px" }}>
               <div style={sectionBoxStyle}>
                 <h3 style={sectionTitleStyle}>{t.newProduction}</h3>
-                {opsNote ? <div style={{ color: "#111111", fontSize: 12, marginBottom: 8 }}>{opsNote}</div> : null}
+                {opsNote ? <div style={{ color: "var(--text-main)", fontSize: 12, marginBottom: 8 }}>{opsNote}</div> : null}
                 <form onSubmit={handleCreateLot} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
                   <div>
                     <label style={labelStyle}>Materyal Türü</label>
@@ -2327,18 +2530,18 @@ export default function App() {
                     </select>
                   </div>
                   <button type="submit" style={{ ...btnPrimary, marginTop: "8px" }}>{t.saveToSystem}</button>
-                  <div style={{ fontSize: 11, color: "#444444" }}>EWC {ewcOf(newLot.material).code} · {ewcOf(newLot.material).label}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)" }}>EWC {ewcOf(newLot.material).code} · {ewcOf(newLot.material).label}</div>
                 </form>
               </div>
 
               <div style={sectionBoxStyle}>
                 <h3 style={sectionTitleStyle}>{t.lotRouting}</h3>
-                <p style={{ color: "#444444", fontSize: "13px", lineHeight: "1.5", marginBottom: "20px" }}>
+                <p style={{ color: "var(--text-muted)", fontSize: "13px", lineHeight: "1.5", marginBottom: "20px" }}>
                   {lots[0]
                     ? recommendRoute(lots[0].material).reason.replace("yönlendirildi", "önerilir") + ` Güncel lot: ${lots[0].id} (${lots[0].material}).`
                     : "Rotalanacak lot yok."}
                 </p>
-                {routeMessage && <p style={{ color: "#111111", fontSize: "12px" }}>{routeMessage}</p>}
+                {routeMessage && <p style={{ color: "var(--text-main)", fontSize: "12px" }}>{routeMessage}</p>}
                 <button type="button" onClick={handleApplyRouting} style={btnPrimary}>{t.applyAi}</button>
                 <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
                   <button type="button" style={linkBtn} onClick={() => setTab("collection")}>Kaynak alanlar</button>
@@ -2357,22 +2560,22 @@ export default function App() {
               <h2 style={pageHeaderStyle}>{t.lots}</h2>
               <div style={{ display: "flex", gap: 8 }}>
                 <input ref={photoInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleLotPhoto} />
-                <button type="button" onClick={() => setScanOpen(true)} style={{ background: "#ffffff", color: "#111111", border: "1px solid #111111", borderRadius: "4px", padding: "8px 16px", cursor: "pointer", fontSize: "12px", fontWeight: "600" }}>
+                <button type="button" onClick={() => setScanOpen(true)} style={{ background: "var(--bg-surface)", color: "var(--text-main)", border: "1px solid var(--border-strong)", borderRadius: "4px", padding: "8px 16px", cursor: "pointer", fontSize: "12px", fontWeight: "600" }}>
                   QR okut
                 </button>
                 <input ref={csvInputRef} type="file" accept=".csv,text/csv" style={{ display: "none" }} onChange={handleCsvFile} />
-                <button onClick={handleCsvUpload} style={{ background: "#d0d0d0", color: "#111111", border: "1px solid #666666", borderRadius: "4px", padding: "8px 16px", cursor: "pointer", fontSize: "12px", fontWeight: "600" }}>
+                <button onClick={handleCsvUpload} style={{ background: "var(--border-color)", color: "var(--text-main)", border: "1px solid #666666", borderRadius: "4px", padding: "8px 16px", cursor: "pointer", fontSize: "12px", fontWeight: "600" }}>
                   {t.bulkImport}
                 </button>
               </div>
             </div>
-            <p style={{ color: "#444444", fontSize: 12, margin: "10px 0 0" }}>
+            <p style={{ color: "var(--text-muted)", fontSize: 12, margin: "10px 0 0" }}>
               QR okutunca zincir açılır. Aldım/Teslim tartım fişi, plaka ve imza ile irsaliye keser.
             </p>
-            <div style={{ overflowX: "auto", marginTop: "20px", backgroundColor: "#ffffff", borderRadius: "6px", border: "1px solid #e8e8e8" }}>
+            <div style={{ overflowX: "auto", marginTop: "20px", backgroundColor: "var(--bg-surface)", borderRadius: "6px", border: "1px solid var(--border-color)" }}>
             <table style={{ width: "100%", minWidth: 960, borderCollapse: "collapse" }}>
               <thead>
-                <tr style={{ backgroundColor: "#e8e8e8", textAlign: "left" }}>
+                <tr style={{ backgroundColor: "var(--border-color)", textAlign: "left" }}>
                   <th style={thStyle}>LOT ID</th>
                   <th style={thStyle}>MATERYAL</th>
                   <th style={thStyle}>AĞIRLIK</th>
@@ -2386,35 +2589,35 @@ export default function App() {
               </thead>
               <tbody>
                 {filteredLots.map(lot => (
-                  <tr key={lot.id} style={{ borderBottom: "1px solid #e8e8e8" }}>
-                    <td style={{ ...tdStyle, fontWeight: "600", color: "#111111" }}>{lot.id}</td>
+                  <tr key={lot.id} style={{ borderBottom: "1px solid var(--border-color)" }}>
+                    <td style={{ ...tdStyle, fontWeight: "600", color: "var(--text-main)" }}>{lot.id}</td>
                     <td style={tdStyle}>{lot.material}</td>
                     <td style={tdStyle}>{lot.weight} kg</td>
                     <td style={tdStyle}>{lot.facility}</td>
                     <td style={tdStyle}>{lot.sourceId || "—"}</td>
                     <td style={tdStyle}>{ewcOf(lot.material).code}</td>
                     <td style={tdStyle}>%{lot.purity}</td>
-                    <td style={tdStyle}><span style={{ color: "#111111", fontSize: "11px", fontWeight: "700" }}>{lot.status}</span></td>
+                    <td style={tdStyle}><span style={{ color: "var(--text-main)", fontSize: "11px", fontWeight: "700" }}>{lot.status}</span></td>
                     <td style={tdStyle}>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
                         {lot.photoThumb && <img src={lot.photoThumb} alt="" width={28} height={28} style={{ borderRadius: 4, objectFit: "cover" }} />}
-                        <button onClick={() => setQrModalLot(lot)} style={{ background: "#e8e8e8", color: "#444444", border: "1px solid #d0d0d0", borderRadius: "4px", padding: "4px 8px", cursor: "pointer", fontSize: "11px" }}>
+                        <button onClick={() => setQrModalLot(lot)} style={{ background: "var(--border-color)", color: "var(--text-muted)", border: "1px solid var(--border-color)", borderRadius: "4px", padding: "4px 8px", cursor: "pointer", fontSize: "11px" }}>
                           {t.qrLabel}
                         </button>
-                        <button type="button" onClick={() => setQrModalLot(lot)} style={{ background: "#e8e8e8", color: "#111111", border: "1px solid #d0d0d0", borderRadius: "4px", padding: "4px 8px", cursor: "pointer", fontSize: "11px" }}>
+                        <button type="button" onClick={() => setQrModalLot(lot)} style={{ background: "var(--border-color)", color: "var(--text-main)", border: "1px solid var(--border-color)", borderRadius: "4px", padding: "4px 8px", cursor: "pointer", fontSize: "11px" }}>
                           Zincir
                         </button>
                         <button
                           type="button"
                           onClick={() => { setPhotoLotId(lot.id); photoInputRef.current?.click(); }}
-                          style={{ background: "#e8e8e8", color: "#444444", border: "1px solid #d0d0d0", borderRadius: "4px", padding: "4px 8px", cursor: "pointer", fontSize: "11px" }}
+                          style={{ background: "var(--border-color)", color: "var(--text-muted)", border: "1px solid var(--border-color)", borderRadius: "4px", padding: "4px 8px", cursor: "pointer", fontSize: "11px" }}
                         >
                           Foto
                         </button>
-                        <button type="button" onClick={() => setLotStatus(lot, "ALINDI")} style={{ background: "#e8e8e8", color: "#111111", border: "1px solid #d0d0d0", borderRadius: "4px", padding: "4px 8px", cursor: "pointer", fontSize: "11px" }}>
+                        <button type="button" onClick={() => setLotStatus(lot, "ALINDI")} style={{ background: "var(--border-color)", color: "var(--text-main)", border: "1px solid var(--border-color)", borderRadius: "4px", padding: "4px 8px", cursor: "pointer", fontSize: "11px" }}>
                           Aldım
                         </button>
-                        <button type="button" onClick={() => setLotStatus(lot, "TESLİM EDİLDİ")} style={{ background: "#e8e8e8", color: "#111111", border: "1px solid #d0d0d0", borderRadius: "4px", padding: "4px 8px", cursor: "pointer", fontSize: "11px" }}>
+                        <button type="button" onClick={() => setLotStatus(lot, "TESLİM EDİLDİ")} style={{ background: "var(--border-color)", color: "var(--text-main)", border: "1px solid var(--border-color)", borderRadius: "4px", padding: "4px 8px", cursor: "pointer", fontSize: "11px" }}>
                           Teslim
                         </button>
                       </div>
@@ -2430,10 +2633,10 @@ export default function App() {
         {tab === "waybills" && (
           <div>
             <h2 style={pageHeaderStyle}>{t.waybills}</h2>
-            <p style={{ color: "#444444", fontSize: 12, margin: "8px 0 16px" }}>
-              Bu sayfadan alım/teslim irsaliyesi kesin. Kg, plaka ve imza zorunlu değil; lot seçip kesebilirsiniz.
+            <p style={{ color: "var(--text-muted)", fontSize: 12, margin: "8px 0 16px" }}>
+              TEMELIRSALIYE senaryosu · UBL-TR DespatchAdvice · GİB test entegratörü. Canlı mükellef GİB sertifikası yoktur; zarf 1200/1300 kodları jüri test ortamıdır.
             </p>
-            {waybillNote ? <div style={{ ...sectionBoxStyle, marginBottom: 12, color: "#111111", fontSize: 13 }}>{waybillNote}</div> : null}
+            {waybillNote ? <div style={{ ...sectionBoxStyle, marginBottom: 12, color: "var(--text-main)", fontSize: 13 }}>{waybillNote}</div> : null}
             <form onSubmit={submitWaybillForm} style={{ ...sectionBoxStyle, marginBottom: 16, display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12 }}>
               <div>
                 <label style={labelStyle}>Lot</label>
@@ -2441,7 +2644,8 @@ export default function App() {
                   value={wbDraft.lotId || lots[0]?.id || ""}
                   onChange={(e) => {
                     const lot = lots.find((l) => l.id === e.target.value);
-                    setWbDraft({ ...wbDraft, lotId: e.target.value, kg: lot ? String(lot.weight) : wbDraft.kg });
+                    const fac = String(lot?.facility || "").match(/FAC-\d+/)?.[0] || "FAC-04";
+                    setWbDraft({ ...wbDraft, lotId: e.target.value, kg: lot ? String(lot.weight) : wbDraft.kg, receiverId: fac });
                   }}
                   style={inputStyle}
                 >
@@ -2453,7 +2657,7 @@ export default function App() {
               <div>
                 <label style={labelStyle}>Tür</label>
                 <select value={wbDraft.kind} onChange={(e) => setWbDraft({ ...wbDraft, kind: e.target.value })} style={inputStyle}>
-                  <option value="TESLİM">Teslim</option>
+                  <option value="TESLİM">Sevk / teslim</option>
                   <option value="ALIM">Alım</option>
                 </select>
               </div>
@@ -2462,7 +2666,15 @@ export default function App() {
                 <input type="number" value={wbDraft.kg} onChange={(e) => setWbDraft({ ...wbDraft, kg: e.target.value })} placeholder="Lot ağırlığı" style={inputStyle} />
               </div>
               <div>
-                <label style={labelStyle}>Plaka</label>
+                <label style={labelStyle}>Alıcı (VKN)</label>
+                <select value={wbDraft.receiverId} onChange={(e) => setWbDraft({ ...wbDraft, receiverId: e.target.value })} style={inputStyle}>
+                  {receiverOptions().map((opt) => (
+                    <option key={opt.id} value={opt.id}>{opt.label} · {opt.party.vkn}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label style={labelStyle}>Plaka / şoför</label>
                 <select value={wbDraft.plate || fleet[0]?.plate || ""} onChange={(e) => setWbDraft({ ...wbDraft, plate: e.target.value })} style={inputStyle}>
                   {fleet.map((v) => <option key={v.id} value={v.plate}>{v.plate} · {v.driver}</option>)}
                 </select>
@@ -2472,11 +2684,13 @@ export default function App() {
                 <input value={wbDraft.signer} onChange={(e) => setWbDraft({ ...wbDraft, signer: e.target.value })} placeholder={user.name || "Ad soyad"} style={inputStyle} />
               </div>
               <div style={{ gridColumn: "span 2" }}>
-                <label style={labelStyle}>İmza (isteğe bağlı)</label>
+                <label style={labelStyle}>Mali mühür / imza görseli (isteğe bağlı)</label>
                 <SignaturePad onChange={(signData) => setWbDraft((prev) => ({ ...prev, signData }))} height={72} />
               </div>
               <div style={{ display: "flex", alignItems: "flex-end" }}>
-                <button type="submit" style={{ ...btnPrimary, width: "100%" }}>İrsaliye kes</button>
+                <button type="submit" disabled={gibBusy} style={{ ...btnPrimary, width: "100%", opacity: gibBusy ? 0.6 : 1 }}>
+                  {gibBusy ? "GİB zarfı gönderiliyor…" : "e-İrsaliye kes (GİB)"}
+                </button>
               </div>
             </form>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
@@ -2490,36 +2704,67 @@ export default function App() {
                       display: "block",
                       width: "100%",
                       textAlign: "left",
-                      background: selectedWaybillId === doc.id ? "#eeeeee" : "transparent",
+                      background: selectedWaybillId === doc.id ? "var(--bg-muted)" : "transparent",
                       border: "none",
-                      borderBottom: "1px solid #e8e8e8",
-                      color: "#111111",
+                      borderBottom: "1px solid var(--border-color)",
+                      color: "var(--text-main)",
                       padding: "10px 0",
                       cursor: "pointer"
                     }}
                   >
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "#111111" }}>{doc.id} · {doc.kind}</div>
-                    <div style={{ fontSize: 12, color: "#444444" }}>{doc.lotId} · {doc.kg} kg · {doc.plate} · {doc.time}</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-main)" }}>{doc.documentNo || doc.id} · {doc.kind}</div>
+                    <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                      {(GIB_STATUS[doc.gibStatus] || {}).label || doc.gibStatus} · {doc.kg} kg · {doc.receiver?.name || doc.facility}
+                    </div>
                   </button>
                 ))}
               </div>
               <div style={sectionBoxStyle}>
                 {(() => {
                   const doc = waybills.find((w) => w.id === selectedWaybillId) || waybills[0];
-                  if (!doc) return <div style={{ color: "#444444", fontSize: 12 }}>İrsaliye yok. Lot envanterinden Aldım/Teslim alın.</div>;
+                  if (!doc) return <div style={{ color: "var(--text-muted)", fontSize: 12 }}>e-İrsaliye yok. Lot seçip GİB’e kesin.</div>;
+                  const st = GIB_STATUS[doc.gibStatus] || { label: doc.gibStatus, hint: "" };
                   return (
                     <>
-                      <h3 style={sectionTitleStyle}>{doc.id}</h3>
-                      <div style={{ fontSize: 13, color: "#111111", lineHeight: 1.7 }}>
-                        {doc.kind} · {doc.lotId}<br />
-                        {doc.material} · EWC {doc.ewc}<br />
-                        Tartım {doc.kg} kg · {doc.time}<br />
-                        {doc.sourceId} → {doc.facility}<br />
-                        {doc.plate} · {doc.driver}<br />
+                      <h3 style={sectionTitleStyle}>{doc.documentNo || doc.id}</h3>
+                      <div style={{ fontSize: 12, color: "var(--accent-navy)", fontWeight: 700, marginBottom: 8 }}>{st.label} {doc.gibCode ? `· ${doc.gibCode}` : ""}</div>
+                      <div style={{ fontSize: 13, color: "var(--text-main)", lineHeight: 1.7 }}>
+                        {st.hint}<br />
+                        ETTN {doc.ettn}<br />
+                        Zarf {doc.zarfId || "—"}<br />
+                        {doc.kind} · {doc.lotId} · {doc.material} · EWC {doc.ewc}<br />
+                        {doc.kg} kg · {doc.time}<br />
+                        Gönderici VKN {doc.sender?.vkn || "4790543128"}<br />
+                        Alıcı {doc.receiver?.name || doc.facility} · VKN {doc.receiver?.vkn || "—"}<br />
+                        {doc.plate} · {doc.driver} · TCKN {doc.driverTckn || "—"}<br />
                         İmza: {doc.signer || "—"}
                       </div>
-                      {doc.signData ? <img src={doc.signData} alt="imza" style={{ marginTop: 12, height: 56, background: "#ffffff", borderRadius: 4 }} /> : null}
-                      <button type="button" style={{ ...btnPrimary, marginTop: 16 }} onClick={() => printWaybill(doc)}>İrsaliyeyi yazdır</button>
+                      {doc.signData ? <img src={doc.signData} alt="imza" style={{ marginTop: 12, height: 56, background: "var(--bg-surface)", borderRadius: 4 }} /> : null}
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 16 }}>
+                        <button type="button" style={btnPrimary} onClick={() => printWaybill(doc)}>e-İrsaliye yazdır</button>
+                        <button type="button" style={linkBtn} onClick={() => downloadUbl(doc)}>UBL-TR XML</button>
+                        {doc.gibStatus === "TASLAK" ? (
+                          <button type="button" disabled={gibBusy} style={linkBtn} onClick={() => sendToGib(doc)}>GİB’e gönder</button>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={gibBusy}
+                            style={linkBtn}
+                            onClick={async () => {
+                              setGibBusy(true);
+                              try {
+                                const q = await queryGib(doc);
+                                stampGib(q);
+                                setWaybillNote(`${q.documentNo} sorgu: ${q.gibStatus} (${q.gibCode})`);
+                              } finally {
+                                setGibBusy(false);
+                              }
+                            }}
+                          >
+                            GİB sorgula
+                          </button>
+                        )}
+                      </div>
                     </>
                   );
                 })()}
@@ -2587,24 +2832,24 @@ export default function App() {
         {tab === "priceCompare" && (
           <div>
             <h2 style={pageHeaderStyle}>{t.priceCompare}</h2>
-            <p style={{ color: "#444444", fontSize: 12, margin: "8px 0 16px", lineHeight: 1.55 }}>
+            <p style={{ color: "var(--text-muted)", fontSize: 12, margin: "8px 0 16px", lineHeight: 1.55 }}>
               Aynı 1 kg malzeme için Başer (Çerkezköy) ve Star (Hadımköy) alış fiyatı. Farklar küçük tutuldu; kalın satır daha yüksek teklifi (WasteFlow için daha iyi satış) gösterir.
             </p>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 16 }}>
               <div style={sectionBoxStyle}>
-                <div style={{ fontSize: 11, color: "#111111", fontWeight: 700 }}>BAŞER DAHA YÜKSEK</div>
-                <div style={{ fontSize: 22, fontWeight: 700, color: "#111111", marginTop: 8 }}>{kgCompare.filter((r) => r.winner === "BASER").length} malzeme</div>
-                <div style={{ fontSize: 12, color: "#444444", marginTop: 6 }}>Çerkezköy teklifi önde</div>
+                <div style={{ fontSize: 11, color: "var(--text-main)", fontWeight: 700 }}>BAŞER DAHA YÜKSEK</div>
+                <div style={{ fontSize: 22, fontWeight: 700, color: "var(--text-main)", marginTop: 8 }}>{kgCompare.filter((r) => r.winner === "BASER").length} malzeme</div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>Çerkezköy teklifi önde</div>
               </div>
               <div style={sectionBoxStyle}>
-                <div style={{ fontSize: 11, color: "#111111", fontWeight: 700 }}>STAR DAHA YÜKSEK</div>
-                <div style={{ fontSize: 22, fontWeight: 700, color: "#111111", marginTop: 8 }}>{kgCompare.filter((r) => r.winner === "STAR").length} malzeme</div>
-                <div style={{ fontSize: 12, color: "#444444", marginTop: 6 }}>Hadımköy teklifi önde</div>
+                <div style={{ fontSize: 11, color: "var(--text-main)", fontWeight: 700 }}>STAR DAHA YÜKSEK</div>
+                <div style={{ fontSize: 22, fontWeight: 700, color: "var(--text-main)", marginTop: 8 }}>{kgCompare.filter((r) => r.winner === "STAR").length} malzeme</div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>Hadımköy teklifi önde</div>
               </div>
               <div style={sectionBoxStyle}>
-                <div style={{ fontSize: 11, color: "#444444", fontWeight: 700 }}>EŞİT / SATILMAZ</div>
-                <div style={{ fontSize: 22, fontWeight: 700, color: "#111111", marginTop: 8 }}>{kgCompare.filter((r) => r.winner === "eşit").length} malzeme</div>
-                <div style={{ fontSize: 12, color: "#444444", marginTop: 6 }}>Tehlikeli atık 0 ₺/kg</div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 700 }}>EŞİT / SATILMAZ</div>
+                <div style={{ fontSize: 22, fontWeight: 700, color: "var(--text-main)", marginTop: 8 }}>{kgCompare.filter((r) => r.winner === "eşit").length} malzeme</div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>Tehlikeli atık 0 ₺/kg</div>
               </div>
             </div>
             <div style={{ ...sectionBoxStyle, marginBottom: 16 }}>
@@ -2612,9 +2857,9 @@ export default function App() {
               <div style={{ height: 380 }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={compareChart} margin={{ top: 8, right: 8, left: 0, bottom: 64 }}>
-                    <CartesianGrid stroke="#e8e8e8" />
-                    <XAxis dataKey="name" stroke="#444444" tick={{ fontSize: 10 }} interval={0} angle={-32} textAnchor="end" />
-                    <YAxis stroke="#444444" />
+                    <CartesianGrid stroke="var(--border-color)" />
+                    <XAxis dataKey="name" stroke="var(--text-muted)" tick={{ fontSize: 10 }} interval={0} angle={-32} textAnchor="end" />
+                    <YAxis stroke="var(--text-muted)" />
                     <Tooltip contentStyle={chartTooltip} />
                     <Legend />
                     <Bar dataKey="Başer" fill="#1B6B4A" radius={[3, 3, 0, 0]} />
@@ -2638,13 +2883,13 @@ export default function App() {
                 </thead>
                 <tbody>
                   {kgCompare.map((row) => (
-                    <tr key={row.material} style={{ borderTop: "1px solid #e8e8e8" }}>
+                    <tr key={row.material} style={{ borderTop: "1px solid var(--border-color)" }}>
                       <td style={tdStyle}>{row.material}</td>
-                      <td style={{ ...tdStyle, color: "#111111" }}>{row.baser.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                      <td style={{ ...tdStyle, color: "#111111" }}>{row.star.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                      <td style={{ ...tdStyle, color: "var(--text-main)" }}>{row.baser.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                      <td style={{ ...tdStyle, color: "var(--text-main)" }}>{row.star.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                       <td style={tdStyle}>{row.delta > 0 ? "+" : ""}{row.delta.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                       <td style={tdStyle}>{row.pct > 0 ? "+" : ""}{row.pct}%</td>
-                      <td style={{ ...tdStyle, color: row.winner === "STAR" ? "#1E5A9C" : row.winner === "BASER" ? "#1B6B4A" : "#444444", fontWeight: 700 }}>
+                      <td style={{ ...tdStyle, color: row.winner === "STAR" ? "#1E5A9C" : row.winner === "BASER" ? "#1B6B4A" : "var(--text-muted)", fontWeight: 700 }}>
                         {row.winner === "STAR" ? "Star" : row.winner === "BASER" ? "Başer" : "eşit"}
                       </td>
                       <td style={tdStyle}>{formatTry(Math.round(row.delta * 1000))}</td>
@@ -2664,7 +2909,7 @@ export default function App() {
         {tab === "ai_vision" && (
           <div>
             <h2 style={pageHeaderStyle}>{t.aiVision}</h2>
-            <p style={{ color: "#444444", fontSize: "13px", marginBottom: "20px" }}>
+            <p style={{ color: "var(--text-muted)", fontSize: "13px", marginBottom: "20px" }}>
               Görüntüden malzeme sınıfı. Sonuç 16 tür ve 30 COL kaynağıyla operasyon formuna taşınabilir. Sahada lot fotoğrafı envanterde saklanır.
             </p>
 
@@ -2676,9 +2921,9 @@ export default function App() {
                 onClick={pickImageFile}
                 style={{
                   padding: "24px",
-                  backgroundColor: "#ffffff",
+                  backgroundColor: "var(--bg-surface)",
                   borderRadius: "6px",
-                  border: dragOver ? "2px solid #111111" : "2px dashed #d0d0d0",
+                  border: dragOver ? "2px solid var(--border-strong)" : "2px dashed var(--border-color)",
                   textAlign: "center",
                   display: "flex",
                   flexDirection: "column",
@@ -2695,15 +2940,15 @@ export default function App() {
                   style={{ display: "none" }}
                   onChange={handleImageChange}
                 />
-                <div style={{ color: "#111111", fontSize: "13px", fontWeight: "700", marginBottom: "6px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                <div style={{ color: "var(--text-main)", fontSize: "13px", fontWeight: "700", marginBottom: "6px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
                   GÖRSEL DOSYASI SEÇİN VEYA SÜRÜKLEYİN
                 </div>
-                <div style={{ color: "#444444", fontSize: "11px" }}>
+                <div style={{ color: "var(--text-muted)", fontSize: "11px" }}>
                   Desteklenen Formatlar: PNG, JPG, JPEG, WEBP (Maks: 15MB)
                 </div>
 
                 {selectedImage && (
-                  <div style={{ marginTop: "16px", fontSize: "12px", color: "#111111", fontWeight: "600" }}>
+                  <div style={{ marginTop: "16px", fontSize: "12px", color: "var(--text-main)", fontWeight: "600" }}>
                     SEÇİLEN DOSYA: {selectedImage.name} ({(selectedImage.size / (1024 * 1024)).toFixed(2)} MB)
                   </div>
                 )}
@@ -2725,15 +2970,15 @@ export default function App() {
               </div>
 
               {/* Önizleme Alanı */}
-              <div style={{ padding: "20px", backgroundColor: "#ffffff", borderRadius: "6px", border: "1px solid #e8e8e8", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "200px" }}>
+              <div style={{ padding: "20px", backgroundColor: "var(--bg-surface)", borderRadius: "6px", border: "1px solid var(--border-color)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "200px" }}>
                 {imagePreview ? (
                   <img
                     src={imagePreview}
                     alt="Atık Materyal Önizleme"
-                    style={{ maxWidth: "100%", maxHeight: "220px", borderRadius: "4px", border: "1px solid #d0d0d0", objectFit: "contain" }}
+                    style={{ maxWidth: "100%", maxHeight: "220px", borderRadius: "4px", border: "1px solid var(--border-color)", objectFit: "contain" }}
                   />
                 ) : (
-                  <div style={{ color: "#444444", fontSize: "12px", textAlign: "center", lineHeight: "1.6" }}>
+                  <div style={{ color: "var(--text-muted)", fontSize: "12px", textAlign: "center", lineHeight: "1.6" }}>
                     GÖRSEL ÖNİZLEME ALANI<br />
                     <span style={{ fontSize: "11px", color: "#666666" }}>Analiz edilecek dosya seçildiğinde burada görüntülenecektir.</span>
                   </div>
@@ -2743,15 +2988,15 @@ export default function App() {
 
             {/* Analiz Sonuç Kartı */}
             {aiResult && (
-              <div style={{ marginTop: "24px", padding: "20px", backgroundColor: "#ffffff", borderRadius: "6px", border: "1px solid #111111" }}>
-                <div style={{ fontSize: "11px", color: "#111111", fontWeight: "700", letterSpacing: "0.5px" }}>SPEKTROMETRE ANALİZ SONUCU</div>
-                <h3 style={{ margin: "6px 0 16px 0", color: "#111111", fontSize: "18px" }}>{aiResult.detected_material}</h3>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px", fontSize: "13px", color: "#444444" }}>
-                  <div>Model Doğruluğu: <strong style={{ color: "#111111" }}>%{Math.round((aiResult.confidence || 0) * 100)}</strong></div>
-                  <div>Geri Dönüştürülebilirlik: <strong style={{ color: "#111111" }}>%{aiResult.recyclability_percentage}</strong></div>
-                  <div>Tahmini CO₂ Tasarrufu: <strong style={{ color: "#111111" }}>{aiResult.estimated_co2_saving_kg_per_ton} kg/Ton</strong></div>
+              <div style={{ marginTop: "24px", padding: "20px", backgroundColor: "var(--bg-surface)", borderRadius: "6px", border: "1px solid var(--border-strong)" }}>
+                <div style={{ fontSize: "11px", color: "var(--text-main)", fontWeight: "700", letterSpacing: "0.5px" }}>SPEKTROMETRE ANALİZ SONUCU</div>
+                <h3 style={{ margin: "6px 0 16px 0", color: "var(--text-main)", fontSize: "18px" }}>{aiResult.detected_material}</h3>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px", fontSize: "13px", color: "var(--text-muted)" }}>
+                  <div>Model Doğruluğu: <strong style={{ color: "var(--text-main)" }}>%{Math.round((aiResult.confidence || 0) * 100)}</strong></div>
+                  <div>Geri Dönüştürülebilirlik: <strong style={{ color: "var(--text-main)" }}>%{aiResult.recyclability_percentage}</strong></div>
+                  <div>Tahmini CO₂ Tasarrufu: <strong style={{ color: "var(--text-main)" }}>{aiResult.estimated_co2_saving_kg_per_ton} kg/Ton</strong></div>
                 </div>
-                <div style={{ marginTop: "16px", paddingTop: "12px", borderTop: "1px solid #e8e8e8", fontSize: "13px", color: "#111111" }}>
+                <div style={{ marginTop: "16px", paddingTop: "12px", borderTop: "1px solid var(--border-color)", fontSize: "13px", color: "var(--text-main)" }}>
                   <strong>Sistem Tavsiyesi:</strong> {aiResult.ai_recommendation}
                 </div>
                 <button
@@ -2775,18 +3020,18 @@ export default function App() {
         {tab === "iot" && (
           <div>
             <h2 style={pageHeaderStyle}>{t.iotBins}</h2>
-            <p style={{ color: "#444444", fontSize: 12, margin: "8px 0 0" }}>
+            <p style={{ color: "var(--text-muted)", fontSize: 12, margin: "8px 0 0" }}>
               5 depo IoT + 30 toplama doluluğu. %{85}+ depo koyu çerçeve; %{80}+ COL filo hedefine alınır.
             </p>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "16px", marginTop: "20px" }}>
               {iotBins.map((bin) => (
-                <div key={bin.bin_id} style={{ padding: "20px", backgroundColor: "#ffffff", borderRadius: "6px", border: bin.fill_percentage > 85 ? "1px solid #111111" : "1px solid #e8e8e8" }}>
-                  <div style={{ fontSize: "11px", color: "#444444", fontWeight: "700" }}>{bin.bin_id}</div>
-                  <div style={{ fontSize: "15px", fontWeight: "600", color: "#111111", margin: "4px 0 12px 0" }}>{bin.location}</div>
-                  <div style={{ fontSize: "24px", fontWeight: "700", color: bin.fill_percentage > 85 ? "#111111" : "#111111" }}>%{bin.fill_percentage}</div>
-                  <div style={{ fontSize: "12px", color: "#444444", marginTop: "8px" }}>Batarya Seviyesi: %{bin.battery_level} | Veri: {bin.last_updated}</div>
+                <div key={bin.bin_id} style={{ padding: "20px", backgroundColor: "var(--bg-surface)", borderRadius: "6px", border: bin.fill_percentage > 85 ? "1px solid var(--border-strong)" : "1px solid var(--border-color)" }}>
+                  <div style={{ fontSize: "11px", color: "var(--text-muted)", fontWeight: "700" }}>{bin.bin_id}</div>
+                  <div style={{ fontSize: "15px", fontWeight: "600", color: "var(--text-main)", margin: "4px 0 12px 0" }}>{bin.location}</div>
+                  <div style={{ fontSize: "24px", fontWeight: "700", color: bin.fill_percentage > 85 ? "var(--text-main)" : "var(--text-main)" }}>%{bin.fill_percentage}</div>
+                  <div style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "8px" }}>Batarya Seviyesi: %{bin.battery_level} | Veri: {bin.last_updated}</div>
                   {bin.fill_percentage > 85 && (
-                    <div style={{ marginTop: "12px", fontSize: "11px", color: "#111111", fontWeight: "700", letterSpacing: "0.5px" }}>KAPASİTE UYARISI: ROTALAMA GEREKİYOR</div>
+                    <div style={{ marginTop: "12px", fontSize: "11px", color: "var(--text-main)", fontWeight: "700", letterSpacing: "0.5px" }}>KAPASİTE UYARISI: ROTALAMA GEREKİYOR</div>
                   )}
                 </div>
               ))}
@@ -2801,17 +3046,17 @@ export default function App() {
                   style={{
                     textAlign: "left",
                     padding: 14,
-                    backgroundColor: "#ffffff",
+                    backgroundColor: "var(--bg-surface)",
                     borderRadius: 6,
-                    border: Number(site.fill) >= 80 ? "1px solid #111111" : "1px solid #e8e8e8",
-                    color: "#111111",
+                    border: Number(site.fill) >= 80 ? "1px solid var(--border-strong)" : "1px solid var(--border-color)",
+                    color: "var(--text-main)",
                     cursor: "pointer"
                   }}
                 >
-                  <div style={{ fontSize: 11, color: "#444444", fontWeight: 700 }}>{site.id}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 700 }}>{site.id}</div>
                   <div style={{ fontSize: 13, fontWeight: 600, margin: "4px 0" }}>{site.name}</div>
-                  <div style={{ fontSize: 20, fontWeight: 700, color: Number(site.fill) >= 80 ? "#111111" : "#111111" }}>%{site.fill}</div>
-                  <div style={{ fontSize: 11, color: "#444444", marginTop: 6 }}>{site.material} · {site.facility}</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: Number(site.fill) >= 80 ? "var(--text-main)" : "var(--text-main)" }}>%{site.fill}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>{site.material} · {site.facility}</div>
                 </button>
               ))}
             </div>
@@ -2822,42 +3067,42 @@ export default function App() {
         {tab === "esg" && (
           <div>
             <h2 style={pageHeaderStyle}>{t.esg}</h2>
-            <p style={{ color: "#444444", fontSize: 12, margin: "8px 0 0" }}>
+            <p style={{ color: "var(--text-muted)", fontSize: 12, margin: "8px 0 0" }}>
               Döngüsellik hedefi %{CIRCULARITY_TARGET}. {LICENSE_NOTICE}
             </p>
-            <div style={{ marginTop: "20px", padding: "24px", backgroundColor: "#ffffff", borderRadius: "6px", border: "1px solid #111111" }}>
-              <div style={{ fontSize: "11px", color: "#111111", fontWeight: "700", letterSpacing: "0.5px" }}>UYUMLULUK DERECESİ</div>
-              <h3 style={{ margin: "4px 0 20px 0", color: "#111111", fontSize: "20px" }}>{esgData?.esg_compliance_score}</h3>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "20px", fontSize: "14px", color: "#444444" }}>
-                <div>Engellenen CO₂ Emisyonu: <strong style={{ color: "#111111" }}>{esgData?.co2_avoided_tons} Ton</strong></div>
-                <div>Kurtarılan Ağaç Sayısı: <strong style={{ color: "#111111" }}>{esgData?.trees_saved} Adet</strong></div>
-                <div>Tasarruf Edilen Su Hacmi: <strong style={{ color: "#111111" }}>{esgData?.water_saved_liters?.toLocaleString()} Litre</strong></div>
-                <div>Toplam İşlenen Atık Hacmi: <strong style={{ color: "#111111" }}>{esgData?.total_waste_processed_tons} Ton</strong></div>
+            <div style={{ marginTop: "20px", padding: "24px", backgroundColor: "var(--bg-surface)", borderRadius: "6px", border: "1px solid var(--border-strong)" }}>
+              <div style={{ fontSize: "11px", color: "var(--text-main)", fontWeight: "700", letterSpacing: "0.5px" }}>UYUMLULUK DERECESİ</div>
+              <h3 style={{ margin: "4px 0 20px 0", color: "var(--text-main)", fontSize: "20px" }}>{esgData?.esg_compliance_score}</h3>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "20px", fontSize: "14px", color: "var(--text-muted)" }}>
+                <div>Engellenen CO₂ Emisyonu: <strong style={{ color: "var(--text-main)" }}>{esgData?.co2_avoided_tons} Ton</strong></div>
+                <div>Kurtarılan Ağaç Sayısı: <strong style={{ color: "var(--text-main)" }}>{esgData?.trees_saved} Adet</strong></div>
+                <div>Tasarruf Edilen Su Hacmi: <strong style={{ color: "var(--text-main)" }}>{esgData?.water_saved_liters?.toLocaleString()} Litre</strong></div>
+                <div>Toplam İşlenen Atık Hacmi: <strong style={{ color: "var(--text-main)" }}>{esgData?.total_waste_processed_tons} Ton</strong></div>
               </div>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginTop: 12 }}>
               <div style={sectionBoxStyle}>
-                <div style={{ fontSize: 11, color: "#444444" }}>DÖNGÜSELLİK</div>
-                <div style={{ color: "#111111", fontWeight: 700, marginTop: 6 }}>%{metrics?.circularity_rate ?? 0}</div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>DÖNGÜSELLİK</div>
+                <div style={{ color: "var(--text-main)", fontWeight: 700, marginTop: 6 }}>%{metrics?.circularity_rate ?? 0}</div>
               </div>
               <div style={sectionBoxStyle}>
-                <div style={{ fontSize: 11, color: "#444444" }}>NET MARJ</div>
-                <div style={{ color: "#111111", fontWeight: 700, marginTop: 6 }}>{formatMoney(econ.totals.margin.try, "TRY")}</div>
-                <div style={{ fontSize: 12, color: "#444444" }}>{formatMoney(econ.totals.margin.usd, "USD")} · {formatMoney(econ.totals.margin.eur, "EUR")}</div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>HAFTALIK BRÜT MARJ</div>
+                <div style={{ color: "var(--text-main)", fontWeight: 700, marginTop: 6 }}>{formatMoney(econ.totals.margin.try, "TRY")}</div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{formatMoney(econ.totals.margin.usd, "USD")} · {formatMoney(econ.totals.dailyMargin.usd, "USD")}/gün · %{econ.marginPct}</div>
               </div>
               <div style={sectionBoxStyle}>
-                <div style={{ fontSize: 11, color: "#444444" }}>SAHA</div>
-                <div style={{ color: "#111111", fontWeight: 700, marginTop: 6 }}>{COLLECTION_POINTS.length} COL · 15 araç</div>
-                <div style={{ fontSize: 12, color: "#444444" }}>{hr.count} personel · prim {formatTry(hr.bonus)}</div>
-                <div style={{ fontSize: 12, color: "#444444" }}>{inboxUnread + siteUnread + managerUnread} okunmamış kutu</div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>SAHA</div>
+                <div style={{ color: "var(--text-main)", fontWeight: 700, marginTop: 6 }}>{COLLECTION_POINTS.length} COL · {fleet.length} araç</div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{hr.count} personel · prim {formatTry(hr.bonus)}</div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{inboxUnread + siteUnread + managerUnread} okunmamış kutu</div>
               </div>
             </div>
             <div style={{ ...sectionBoxStyle, marginTop: 12 }}>
               <h3 style={sectionTitleStyle}>Kütle dengesi</h3>
-              <div style={{ fontSize: 13, color: "#111111", lineHeight: 1.7 }}>
+              <div style={{ fontSize: 13, color: "var(--text-main)", lineHeight: 1.7 }}>
                 Giren {mass.incomingKg} kg · geri dönüşüm/teslim {mass.recoveredKg} kg · karantina {mass.landfillKg} kg · yolda {mass.transitKg} kg
               </div>
-              <div style={{ height: 10, background: "#e8e8e8", borderRadius: 99, overflow: "hidden", display: "flex", marginTop: 10 }}>
+              <div style={{ height: 10, background: "var(--border-color)", borderRadius: 99, overflow: "hidden", display: "flex", marginTop: 10 }}>
                 <div style={{ width: `${mass.incomingKg ? (mass.recoveredKg / mass.incomingKg) * 100 : 0}%`, background: "#000" }} />
                 <div style={{ width: `${mass.incomingKg ? (mass.landfillKg / mass.incomingKg) * 100 : 0}%`, background: "#000" }} />
                 <div style={{ width: `${mass.incomingKg ? (mass.transitKg / mass.incomingKg) * 100 : 0}%`, background: "#000" }} />
@@ -2871,16 +3116,16 @@ export default function App() {
         {tab === "audit" && (
           <div>
             <h2 style={pageHeaderStyle}>{t.audit}</h2>
-            <p style={{ color: "#444444", fontSize: 12, margin: "8px 0 0" }}>
+            <p style={{ color: "var(--text-muted)", fontSize: 12, margin: "8px 0 0" }}>
               Lot, rota, filo, depo / saha / müdür kutuları ve özlük işlemleri bu günlüğe yazılır.
             </p>
             <button type="button" style={{ ...btnPrimary, marginTop: 12 }} onClick={() => printAuditPdf(auditLogs)}>Denetim PDF yazdır</button>
-            <div style={{ backgroundColor: "#ffffff", padding: "16px", borderRadius: "6px", border: "1px solid #e8e8e8", marginTop: "20px" }}>
+            <div style={{ backgroundColor: "var(--bg-surface)", padding: "16px", borderRadius: "6px", border: "1px solid var(--border-color)", marginTop: "20px" }}>
               {auditLogs.map(log => (
-                <div key={log.id} style={{ borderBottom: "1px solid #e8e8e8", padding: "10px 0", fontFamily: "monospace", fontSize: "12px" }}>
-                  <span style={{ color: "#444444" }}>[{log.timestamp}] </span>
-                  <span style={{ color: "#111111", fontWeight: "600" }}>{log.action}: </span>
-                  <span style={{ color: "#111111" }}>{log.detail}</span>
+                <div key={log.id} style={{ borderBottom: "1px solid var(--border-color)", padding: "10px 0", fontFamily: "monospace", fontSize: "12px" }}>
+                  <span style={{ color: "var(--text-muted)" }}>[{log.timestamp}] </span>
+                  <span style={{ color: "var(--text-main)", fontWeight: "600" }}>{log.action}: </span>
+                  <span style={{ color: "var(--text-main)" }}>{log.detail}</span>
                 </div>
               ))}
             </div>
@@ -2891,28 +3136,28 @@ export default function App() {
         {tab === "settings" && (
           <div>
             <h2 style={pageHeaderStyle}>{t.settings}</h2>
-            <div style={{ padding: "20px", backgroundColor: "#ffffff", borderRadius: "6px", border: "1px solid #e8e8e8", marginTop: "20px" }}>
-              <h4 style={{ margin: "0 0 12px 0", color: "#111111" }}>Aktif modüller</h4>
-              <div style={{ fontSize: 13, color: "#444444", lineHeight: 1.7 }}>
+            <div style={{ padding: "20px", backgroundColor: "var(--bg-surface)", borderRadius: "6px", border: "1px solid var(--border-color)", marginTop: "20px" }}>
+              <h4 style={{ margin: "0 0 12px 0", color: "var(--text-main)" }}>Aktif modüller</h4>
+              <div style={{ fontSize: 13, color: "var(--text-muted)", lineHeight: 1.7 }}>
                 5 depo × 2 müdür · {hr.count} personel · İK işe al/çıkar · müdür kutusu · özlük · irsaliye · canlı kur
               </div>
             </div>
-            <div style={{ padding: "20px", backgroundColor: "#ffffff", borderRadius: "6px", border: "1px solid #e8e8e8", marginTop: "16px" }}>
-              <h4 style={{ margin: "0 0 12px 0", color: "#111111" }}>Aktif Entegrasyon Noktası</h4>
-              <div style={{ fontSize: "13px", color: "#444444" }}>
+            <div style={{ padding: "20px", backgroundColor: "var(--bg-surface)", borderRadius: "6px", border: "1px solid var(--border-color)", marginTop: "16px" }}>
+              <h4 style={{ margin: "0 0 12px 0", color: "var(--text-main)" }}>Aktif Entegrasyon Noktası</h4>
+              <div style={{ fontSize: "13px", color: "var(--text-muted)" }}>
                 API dokümantasyonu:{" "}
                 <a
                   href={docsUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  style={{ color: "#111111", background: "#e8e8e8", padding: "4px 8px", borderRadius: "4px", textDecoration: "none", fontFamily: "monospace", cursor: "pointer" }}
+                  style={{ color: "var(--text-main)", background: "var(--border-color)", padding: "4px 8px", borderRadius: "4px", textDecoration: "none", fontFamily: "monospace", cursor: "pointer" }}
                 >
                   {docsUrl}
                 </a>
               </div>
             </div>
-            <div style={{ padding: "20px", backgroundColor: "#ffffff", borderRadius: "6px", border: "1px solid #e8e8e8", marginTop: "16px" }}>
-              <h4 style={{ margin: "0 0 12px 0", color: "#111111" }}>Kullanıcı ekle</h4>
+            <div style={{ padding: "20px", backgroundColor: "var(--bg-surface)", borderRadius: "6px", border: "1px solid var(--border-color)", marginTop: "16px" }}>
+              <h4 style={{ margin: "0 0 12px 0", color: "var(--text-main)" }}>Kullanıcı ekle</h4>
               <form onSubmit={handleAddUser} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 <input placeholder="kullanıcı" value={newUser.username} onChange={(e) => setNewUser({ ...newUser, username: e.target.value })} style={inputStyle} />
                 <input placeholder="parola" type="password" value={newUser.password} onChange={(e) => setNewUser({ ...newUser, password: e.target.value })} style={inputStyle} />
@@ -2924,7 +3169,7 @@ export default function App() {
                 </select>
                 <button type="submit" style={{ ...btnPrimary, gridColumn: "1 / -1" }}>Kullanıcıyı kaydet</button>
               </form>
-              <div style={{ marginTop: 12, fontSize: 12, color: "#444444" }}>
+              <div style={{ marginTop: 12, fontSize: 12, color: "var(--text-muted)" }}>
                 Yerel kullanıcılar: {allLocalUsers().map((u) => u.username).join(", ")}
               </div>
             </div>
@@ -2949,31 +3194,31 @@ export default function App() {
       )}
       {qrModalLot && (
         <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.85)", display: "flex", justifyContent: "center", alignItems: "center", zIndex: 50 }}>
-          <div style={{ backgroundColor: "#ffffff", padding: "24px", borderRadius: "8px", border: "1px solid #d0d0d0", width: "440px", maxHeight: "90vh", overflowY: "auto" }}>
-            <div style={{ fontSize: "11px", color: "#444444", fontWeight: "700", marginBottom: "12px" }}>LOT ZİNCİRİ · {ewcOf(qrModalLot.material).code}</div>
-            <div style={{ backgroundColor: "#ffffff", padding: "16px", borderRadius: "4px", margin: "12px 0", textAlign: "center" }}>
+          <div style={{ backgroundColor: "var(--bg-surface)", padding: "24px", borderRadius: "8px", border: "1px solid var(--border-color)", width: "440px", maxHeight: "90vh", overflowY: "auto" }}>
+            <div style={{ fontSize: "11px", color: "var(--text-muted)", fontWeight: "700", marginBottom: "12px" }}>LOT ZİNCİRİ · {ewcOf(qrModalLot.material).code}</div>
+            <div style={{ backgroundColor: "var(--bg-surface)", padding: "16px", borderRadius: "4px", margin: "12px 0", textAlign: "center" }}>
               <LotQr lot={qrModalLot} size={160} />
               <div style={{ color: "#000000", fontWeight: "700", fontSize: "18px", letterSpacing: "1px", marginTop: 8 }}>{qrModalLot.id}</div>
-              <div style={{ color: "#d0d0d0", fontSize: "12px", marginTop: "4px" }}>{qrModalLot.material} · {qrModalLot.weight} kg · {qrModalLot.sourceId} → {qrModalLot.facility}</div>
+              <div style={{ color: "var(--border-color)", fontSize: "12px", marginTop: "4px" }}>{qrModalLot.material} · {qrModalLot.weight} kg · {qrModalLot.sourceId} → {qrModalLot.facility}</div>
             </div>
-            <div style={{ fontSize: 12, color: "#111111" }}>
+            <div style={{ fontSize: 12, color: "var(--text-main)" }}>
               {(qrModalLot.events || lots.find((l) => l.id === qrModalLot.id)?.events || []).map((ev, i) => (
-                <div key={`${ev.at}-${i}`} style={{ borderTop: "1px solid #e8e8e8", padding: "8px 0" }}>
-                  <div style={{ color: "#111111", fontWeight: 700 }}>{ev.type} · {ev.at}</div>
-                  <div style={{ color: "#444444" }}>{ev.who}{ev.plate ? ` · ${ev.plate}` : ""} · {ev.detail}</div>
+                <div key={`${ev.at}-${i}`} style={{ borderTop: "1px solid var(--border-color)", padding: "8px 0" }}>
+                  <div style={{ color: "var(--text-main)", fontWeight: 700 }}>{ev.type} · {ev.at}</div>
+                  <div style={{ color: "var(--text-muted)" }}>{ev.who}{ev.plate ? ` · ${ev.plate}` : ""} · {ev.detail}</div>
                 </div>
               ))}
             </div>
             <button onClick={() => printLotLabel(qrModalLot)} style={{ ...btnPrimary, width: "100%", marginTop: 12, marginBottom: "8px" }}>{t.printLabel}</button>
-            <button onClick={() => setQrModalLot(null)} style={{ background: "transparent", color: "#444444", border: "1px solid #d0d0d0", borderRadius: "4px", width: "100%", padding: "8px", cursor: "pointer", fontSize: "12px" }}>{t.close}</button>
+            <button onClick={() => setQrModalLot(null)} style={{ background: "transparent", color: "var(--text-muted)", border: "1px solid var(--border-color)", borderRadius: "4px", width: "100%", padding: "8px", cursor: "pointer", fontSize: "12px" }}>{t.close}</button>
           </div>
         </div>
       )}
       {ticketModal && (
         <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.85)", display: "flex", justifyContent: "center", alignItems: "center", zIndex: 55 }}>
-          <form onSubmit={confirmTicket} style={{ backgroundColor: "#ffffff", padding: 24, borderRadius: 8, border: "1px solid #d0d0d0", width: 420 }}>
-            <div style={{ fontSize: 11, color: "#111111", fontWeight: 700 }}>{ticketModal.kind === "ALINDI" ? "ALIM TARTIM FİŞİ" : "TESLİM TARTIM FİŞİ"}</div>
-            <h3 style={{ color: "#111111", margin: "8px 0 14px" }}>{ticketModal.lot.id} · EWC {ewcOf(ticketModal.lot.material).code}</h3>
+          <form onSubmit={confirmTicket} style={{ backgroundColor: "var(--bg-surface)", padding: 24, borderRadius: 8, border: "1px solid var(--border-color)", width: 420 }}>
+            <div style={{ fontSize: 11, color: "var(--text-main)", fontWeight: 700 }}>{ticketModal.kind === "ALINDI" ? "ALIM TARTIM FİŞİ" : "TESLİM TARTIM FİŞİ"}</div>
+            <h3 style={{ color: "var(--text-main)", margin: "8px 0 14px" }}>{ticketModal.lot.id} · EWC {ewcOf(ticketModal.lot.material).code}</h3>
             <label style={labelStyle}>kg</label>
             <input type="number" value={ticketForm.kg} onChange={(e) => setTicketForm({ ...ticketForm, kg: e.target.value })} style={{ ...inputStyle, marginBottom: 10 }} />
             <label style={labelStyle}>Plaka</label>
@@ -2985,7 +3230,7 @@ export default function App() {
             <label style={labelStyle}>İmza</label>
             <SignaturePad onChange={(signData) => setTicketForm((prev) => ({ ...prev, signData }))} />
             <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-              <button type="submit" style={{ ...btnPrimary, flex: 1 }}>İrsaliye kes</button>
+              <button type="submit" disabled={gibBusy} style={{ ...btnPrimary, flex: 1 }}>{gibBusy ? "GİB…" : "e-İrsaliye kes (GİB)"}</button>
               <button type="button" onClick={() => setTicketModal(null)} style={{ ...linkBtn, flex: 1 }}>Vazgeç</button>
             </div>
           </form>
@@ -2996,15 +3241,15 @@ export default function App() {
 }
 
 // --- Kurumsal Stil Bilesenleri ---
-const pageHeaderStyle = { margin: 0, fontSize: "20px", fontWeight: "600", color: "#111111", letterSpacing: "-0.3px" };
-const sectionBoxStyle = { padding: "20px", backgroundColor: "#ffffff", borderRadius: "6px", border: "1px solid #e8e8e8" };
-const sectionTitleStyle = { margin: "0 0 16px 0", fontSize: "15px", fontWeight: "600", color: "#111111" };
-const labelStyle = { display: "block", fontSize: "11px", color: "#444444", fontWeight: "600", marginBottom: "6px", textTransform: "uppercase" };
+const pageHeaderStyle = { margin: 0, fontSize: "20px", fontWeight: "600", color: "var(--text-main)", letterSpacing: "-0.3px" };
+const sectionBoxStyle = { padding: "20px", backgroundColor: "var(--bg-surface)", borderRadius: "6px", border: "1px solid var(--border-color)" };
+const sectionTitleStyle = { margin: "0 0 16px 0", fontSize: "15px", fontWeight: "600", color: "var(--text-main)" };
+const labelStyle = { display: "block", fontSize: "11px", color: "var(--text-muted)", fontWeight: "600", marginBottom: "6px", textTransform: "uppercase" };
 
 const btnNav = (active) => ({
   padding: "9px 12px",
-  backgroundColor: active ? "#eef2f8" : "transparent",
-  color: active ? "#0B2C5F" : "#444444",
+  backgroundColor: active ? "var(--nav-active)" : "transparent",
+  color: active ? "var(--accent-navy)" : "var(--text-muted)",
   border: "none",
   borderRadius: "4px",
   textAlign: "left",
@@ -3014,8 +3259,8 @@ const btnNav = (active) => ({
 });
 
 const btnPrimary = {
-  backgroundColor: "#ffffff",
-  color: "#0B2C5F",
+  backgroundColor: "var(--bg-surface)",
+  color: "var(--accent-navy)",
   border: "1px solid #0B2C5F",
   borderRadius: "4px",
   padding: "9px 16px",
@@ -3027,15 +3272,15 @@ const btnPrimary = {
 
 const linkBtn = {
   ...btnPrimary,
-  backgroundColor: "#ffffff",
+  backgroundColor: "var(--bg-surface)",
   fontSize: 11,
   padding: "6px 10px"
 };
 
 const inputStyle = {
-  backgroundColor: "#ffffff",
-  color: "#111111",
-  border: "1px solid #d0d0d0",
+  backgroundColor: "var(--bg-surface)",
+  color: "var(--text-main)",
+  border: "1px solid var(--border-color)",
   borderRadius: "4px",
   padding: "8px 12px",
   width: "100%",
@@ -3047,11 +3292,11 @@ const inputStyle = {
 };
 
 const Card = ({ title, value }) => (
-  <div style={{ padding: "16px 20px", backgroundColor: "#ffffff", borderRadius: "6px", border: "1px solid #e8e8e8" }}>
-    <div style={{ color: "#444444", fontSize: "11px", fontWeight: "600", textTransform: "uppercase" }}>{title}</div>
-    <div style={{ margin: "8px 0 0 0", color: "#111111", fontSize: "20px", fontWeight: "700" }}>{value}</div>
+  <div style={{ padding: "16px 20px", backgroundColor: "var(--bg-surface)", borderRadius: "6px", border: "1px solid var(--border-color)" }}>
+    <div style={{ color: "var(--text-muted)", fontSize: "11px", fontWeight: "600", textTransform: "uppercase" }}>{title}</div>
+    <div style={{ margin: "8px 0 0 0", color: "var(--text-main)", fontSize: "20px", fontWeight: "700" }}>{value}</div>
   </div>
 );
 
-const thStyle = { padding: "12px 16px", color: "#444444", fontSize: "11px", fontWeight: "700", textTransform: "uppercase", letterSpacing: "0.5px" };
-const tdStyle = { padding: "12px 16px", fontSize: "13px", color: "#111111" };
+const thStyle = { padding: "12px 16px", color: "var(--text-muted)", fontSize: "11px", fontWeight: "700", textTransform: "uppercase", letterSpacing: "0.5px" };
+const tdStyle = { padding: "12px 16px", fontSize: "13px", color: "var(--text-main)" };

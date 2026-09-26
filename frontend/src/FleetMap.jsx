@@ -42,11 +42,14 @@ export default function FleetMap({ vehicles, selectedId, onSelect }) {
       marker.on("click", () => onSelect?.(v.id));
       marker.addTo(layer);
       if (v.destLat && v.destLng) {
-        L.polyline([[v.lat, v.lng], [v.destLat, v.destLng]], {
+        const line = (v.routePath?.length
+          ? v.routePath.map((p) => [p.lat, p.lng])
+          : [[v.lat, v.lng], [v.destLat, v.destLng]]);
+        L.polyline(line, {
           color: destColor,
-          weight: selected ? 3 : 2,
-          dashArray: "4 6",
-          opacity: 0.75
+          weight: selected ? 4 : 3,
+          dashArray: v.routePath?.length ? undefined : "4 6",
+          opacity: 0.85
         }).addTo(layer);
       }
     });

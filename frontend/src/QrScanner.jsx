@@ -84,17 +84,17 @@ export default function QrScanner({ onFound, onClose }) {
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 70, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ background: "#ffffff", padding: 20, borderRadius: 8, width: 360, border: "1px solid #d0d0d0" }}>
-        <div style={{ color: "#444444", fontSize: 11, fontWeight: 700, marginBottom: 10 }}>QR OKUT</div>
-        {busy && <div style={{ color: "#444444", fontSize: 12 }}>Kamera isteniyor…</div>}
+      <div style={{ background: "var(--bg-surface)", padding: 20, borderRadius: 8, width: 360, border: "1px solid var(--border-color)" }}>
+        <div style={{ color: "var(--text-muted)", fontSize: 11, fontWeight: 700, marginBottom: 10 }}>QR OKUT</div>
+        {busy && <div style={{ color: "var(--text-muted)", fontSize: 12 }}>Kamera isteniyor…</div>}
         <video ref={videoRef} muted playsInline style={{ width: "100%", borderRadius: 6, background: "#000" }} />
         <canvas ref={canvasRef} style={{ display: "none" }} />
-        {error && <div style={{ color: "#111111", fontSize: 12, marginTop: 8 }}>{error}</div>}
-        <label style={{ display: "block", marginTop: 12, fontSize: 12, color: "#111111", cursor: "pointer" }}>
+        {error && <div style={{ color: "var(--text-main)", fontSize: 12, marginTop: 8 }}>{error}</div>}
+        <label style={{ display: "block", marginTop: 12, fontSize: 12, color: "var(--text-main)", cursor: "pointer" }}>
           QR görseli yükle
           <input type="file" accept="image/*" onChange={onFile} style={{ display: "none" }} />
         </label>
-        <button type="button" onClick={onClose} style={{ marginTop: 12, width: "100%", background: "transparent", color: "#444444", border: "1px solid #d0d0d0", borderRadius: 4, padding: 8, cursor: "pointer" }}>
+        <button type="button" onClick={onClose} style={{ marginTop: 12, width: "100%", background: "transparent", color: "var(--text-muted)", border: "1px solid var(--border-color)", borderRadius: 4, padding: 8, cursor: "pointer" }}>
           Kapat
         </button>
       </div>

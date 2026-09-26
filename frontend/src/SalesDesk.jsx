@@ -36,7 +36,7 @@ export default function SalesDesk({
   return (
     <div>
       <h2 style={pageHeaderStyle}>Satış · {buyer.name}</h2>
-      <p style={{ color: "#444444", fontSize: 12, margin: "8px 0 16px", lineHeight: 1.55 }}>
+      <p style={{ color: "var(--text-muted)", fontSize: 12, margin: "8px 0 16px", lineHeight: 1.55 }}>
         Çerçeve sözleşme {buyer.contract}. Depodan çıkan tır {buyer.district} kabul sahasına gider.
         Asgari sevk {buyer.minTon} ton. {buyer.spec}
       </p>
@@ -44,8 +44,8 @@ export default function SalesDesk({
       <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
         <div style={{ ...sectionBoxStyle, borderColor: buyer.color }}>
           <div style={{ fontSize: 11, color: buyer.colorDim, fontWeight: 700 }}>ALICI FİRMA</div>
-          <div style={{ fontSize: 18, fontWeight: 700, color: "#111111", marginTop: 8 }}>{buyer.legal}</div>
-          <div style={{ fontSize: 12, color: "#444444", marginTop: 8, lineHeight: 1.65 }}>
+          <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text-main)", marginTop: 8 }}>{buyer.legal}</div>
+          <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 8, lineHeight: 1.65 }}>
             {buyer.address}<br />
             {buyer.contact} ({buyer.title}) · {buyer.phone}<br />
             {buyer.email}<br />
@@ -58,42 +58,42 @@ export default function SalesDesk({
           </div>
         </div>
         <div style={sectionBoxStyle}>
-          <div style={{ fontSize: 11, color: "#444444" }}>SATILAN</div>
-          <div style={{ color: "#111111", fontWeight: 700, marginTop: 8, fontSize: 22 }}>{book.kg.toLocaleString("tr-TR")} kg</div>
-          <div style={{ fontSize: 12, color: "#444444", marginTop: 6 }}>{book.count} sevk / e-fatura</div>
+          <div style={{ fontSize: 11, color: "var(--text-muted)" }}>SATILAN</div>
+          <div style={{ color: "var(--text-main)", fontWeight: 700, marginTop: 8, fontSize: 22 }}>{book.kg.toLocaleString("tr-TR")} kg</div>
+          <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>{book.count} sevk / e-fatura</div>
         </div>
         <div style={sectionBoxStyle}>
-          <div style={{ fontSize: 11, color: "#444444" }}>CİRO</div>
-          <div style={{ color: "#111111", fontWeight: 700, marginTop: 8, fontSize: 22 }}>{formatTry(book.amount)}</div>
-          <div style={{ fontSize: 12, color: "#444444", marginTop: 6 }}>{buyer.terms}</div>
+          <div style={{ fontSize: 11, color: "var(--text-muted)" }}>CİRO</div>
+          <div style={{ color: "var(--text-main)", fontWeight: 700, marginTop: 8, fontSize: 22 }}>{formatTry(book.amount)}</div>
+          <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>{buyer.terms}</div>
         </div>
         <div style={sectionBoxStyle}>
-          <div style={{ fontSize: 11, color: "#444444" }}>BEKLEYEN STOK</div>
-          <div style={{ color: "#111111", fontWeight: 700, marginTop: 8, fontSize: 22 }}>{sellableLots.length} lot</div>
-          <div style={{ fontSize: 12, color: "#444444", marginTop: 6 }}>işlendi / teslim, henüz satılmadı</div>
+          <div style={{ fontSize: 11, color: "var(--text-muted)" }}>BEKLEYEN STOK</div>
+          <div style={{ color: "var(--text-main)", fontWeight: 700, marginTop: 8, fontSize: 22 }}>{sellableLots.length} lot</div>
+          <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>işlendi / teslim, henüz satılmadı</div>
         </div>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 16 }}>
         <div style={sectionBoxStyle}>
           <div style={{ fontSize: 11, color: buyer.colorDim, fontWeight: 700 }}>KABUL</div>
-          <div style={{ fontSize: 12, color: "#111111", marginTop: 6, lineHeight: 1.55 }}>{buyer.hours}<br />{buyer.gate}</div>
+          <div style={{ fontSize: 12, color: "var(--text-main)", marginTop: 6, lineHeight: 1.55 }}>{buyer.hours}<br />{buyer.gate}</div>
         </div>
         <div style={sectionBoxStyle}>
           <div style={{ fontSize: 11, color: buyer.colorDim, fontWeight: 700 }}>ÖDEME</div>
-          <div style={{ fontSize: 12, color: "#111111", marginTop: 6, lineHeight: 1.55 }}>{buyer.iban}<br />{buyer.terms}</div>
+          <div style={{ fontSize: 12, color: "var(--text-main)", marginTop: 6, lineHeight: 1.55 }}>{buyer.iban}<br />{buyer.terms}</div>
         </div>
         <div style={sectionBoxStyle}>
           <div style={{ fontSize: 11, color: buyer.colorDim, fontWeight: 700 }}>SÖZLEŞME</div>
-          <div style={{ fontSize: 12, color: "#111111", marginTop: 6, lineHeight: 1.55 }}>{buyer.contract}<br />Fiyat listesi 1 kg bazında kilitli</div>
+          <div style={{ fontSize: 12, color: "var(--text-main)", marginTop: 6, lineHeight: 1.55 }}>{buyer.contract}<br />Fiyat listesi 1 kg bazında kilitli</div>
         </div>
         <div style={sectionBoxStyle}>
           <div style={{ fontSize: 11, color: buyer.colorDim, fontWeight: 700 }}>KONUM</div>
-          <div style={{ fontSize: 12, color: "#111111", marginTop: 6, lineHeight: 1.55 }}>{buyer.district} / {buyer.city}<br />{buyer.lat.toFixed(4)}, {buyer.lng.toFixed(4)}</div>
+          <div style={{ fontSize: 12, color: "var(--text-main)", marginTop: 6, lineHeight: 1.55 }}>{buyer.district} / {buyer.city}<br />{buyer.lat.toFixed(4)}, {buyer.lng.toFixed(4)}</div>
         </div>
       </div>
 
-      {note ? <div style={{ ...sectionBoxStyle, marginBottom: 12, color: "#111111", fontSize: 13 }}>{note}</div> : null}
+      {note ? <div style={{ ...sectionBoxStyle, marginBottom: 12, color: "var(--text-main)", fontSize: 13 }}>{note}</div> : null}
 
       <form onSubmit={onSubmit} style={{ ...sectionBoxStyle, marginBottom: 16, display: "grid", gridTemplateColumns: "1.5fr 0.8fr 1.2fr 1fr", gap: 12 }}>
         <div>
@@ -124,7 +124,7 @@ export default function SalesDesk({
           </select>
         </div>
         <div style={{ display: "flex", flexDirection: "column", justifyContent: "flex-end", gap: 6 }}>
-          <div style={{ fontSize: 11, color: "#444444" }}>
+          <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
             Teklif {quoteKg ? `${quoteKg.toLocaleString("tr-TR")} kg × ${quotePrice} ₺ = ${formatTry(quoteTry)}` : "lot seçin"}
           </div>
           <button type="submit" style={{ ...btnPrimary, width: "100%" }} disabled={!sellableLots.length}>
@@ -139,9 +139,9 @@ export default function SalesDesk({
           <div style={{ height: 260 }}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={book.chart} layout="vertical" margin={{ top: 8, right: 16, left: 8, bottom: 0 }}>
-                <CartesianGrid stroke="#e8e8e8" />
-                <XAxis type="number" stroke="#444444" />
-                <YAxis type="category" dataKey="name" width={120} stroke="#444444" tick={{ fontSize: 11 }} />
+                <CartesianGrid stroke="var(--border-color)" />
+                <XAxis type="number" stroke="var(--text-muted)" />
+                <YAxis type="category" dataKey="name" width={120} stroke="var(--text-muted)" tick={{ fontSize: 11 }} />
                 <Tooltip contentStyle={chartTooltip} />
                 <Bar dataKey="kg" fill={buyer.color} radius={[0, 4, 4, 0]} />
               </BarChart>
@@ -155,8 +155,8 @@ export default function SalesDesk({
               const price = salePriceKg(material, buyer.id);
               const row = book.rows.find((r) => r.material === material);
               return (
-                <div key={material} style={{ display: "flex", justifyContent: "space-between", gap: 8, borderTop: "1px solid #e8e8e8", padding: "7px 0", fontSize: 12 }}>
-                  <span style={{ color: "#111111" }}>{material}</span>
+                <div key={material} style={{ display: "flex", justifyContent: "space-between", gap: 8, borderTop: "1px solid var(--border-color)", padding: "7px 0", fontSize: 12 }}>
+                  <span style={{ color: "var(--text-main)" }}>{material}</span>
                   <span style={{ color: buyer.colorDim, whiteSpace: "nowrap" }}>
                     {price} ₺/kg{row ? ` · ${Math.round(row.kg).toLocaleString("tr-TR")} kg · ${formatTry(row.amount)}` : " · sevk yok"}
                   </span>
@@ -181,14 +181,14 @@ export default function SalesDesk({
                 textAlign: "left",
                 background: selectedId === row.id ? buyer.bg : "transparent",
                 border: "none",
-                borderBottom: "1px solid #e8e8e8",
-                color: "#111111",
+                borderBottom: "1px solid var(--border-color)",
+                color: "var(--text-main)",
                 padding: "10px 0",
                 cursor: "pointer"
               }}
             >
               <div style={{ fontSize: 12, fontWeight: 700, color: buyer.colorDim }}>{row.id} · {formatTry(row.amount)}</div>
-              <div style={{ fontSize: 12, color: "#444444" }}>{row.lotId} · {row.kg} kg · {row.priceKg} ₺/kg · {row.plate} · {row.pay}</div>
+              <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{row.lotId} · {row.kg} kg · {row.priceKg} ₺/kg · {row.plate} · {row.pay}</div>
             </button>
           ))}
         </div>
@@ -196,7 +196,7 @@ export default function SalesDesk({
           {doc ? (
             <>
               <h3 style={sectionTitleStyle}>{doc.id}</h3>
-              <div style={{ fontSize: 13, color: "#111111", lineHeight: 1.75 }}>
+              <div style={{ fontSize: 13, color: "var(--text-main)", lineHeight: 1.75 }}>
                 Alıcı: {doc.buyer}<br />
                 Sözleşme: {doc.contract || buyer.contract}<br />
                 Varış: {doc.dest}<br />
@@ -212,7 +212,7 @@ export default function SalesDesk({
                 Bu tırı haritada izle
               </button>
             </>
-          ) : <div style={{ color: "#444444", fontSize: 12 }}>Henüz satış yok.</div>}
+          ) : <div style={{ color: "var(--text-muted)", fontSize: 12 }}>Henüz satış yok.</div>}
         </div>
       </div>
     </div>

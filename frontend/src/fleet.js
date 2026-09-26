@@ -1,6 +1,9 @@
 import { COLLECTION_POINTS } from "./collectionPoints.js";
 import { DEPOTS } from "./depots.js";
 import { BASER, STAR, BUYERS } from "./sales.js";
+import { haversineKm, pathLengthKm, pointAlongPath } from "./roadRoute.js";
+
+export { haversineKm };
 
 export const FLEET_DESTINATIONS = [
   ...BUYERS.map((b) => ({ id: b.id, label: `Satış · ${b.name} (${b.district})`, lat: b.lat, lng: b.lng })),
@@ -29,6 +32,7 @@ export const INITIAL_FLEET = [
 ].map((v, i) => {
   const destId = OUTBOUND[v.id] || "";
   const buyer = BUYERS.find((b) => b.id === destId);
+  const home = DEPOTS[i % DEPOTS.length];
   return {
     ...v,
     speedKmh: 18 + (i % 7) * 4,
@@ -41,53 +45,126 @@ export const INITIAL_FLEET = [
     tripKm: 0,
     tripStartLat: buyer ? v.lat : null,
     tripStartLng: buyer ? v.lng : null,
-    arrivedAck: false
+    arrivedAck: false,
+    routePath: null,
+    routeKmDone: 0,
+    routeDistanceKm: 0,
+    depotId: home.id,
+    imei: `8649980${String(10000000 + i).slice(-8)}`,
+    sim: `5321112${String(i + 1).padStart(3, "0")}`,
+    trackerModel: i % 3 === 0 ? "Teltonika FMB920" : i % 3 === 1 ? "Queclink GV75" : "Ruptela Trace5",
+    trackerStatus: "online"
   };
 });
 
-export function haversineKm(a, b) {
-  if (!a || !b || a.lat == null || b.lat == null) return 0;
-  const R = 6371;
-  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
-  const dLng = ((b.lng - a.lng) * Math.PI) / 180;
-  const s =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos((a.lat * Math.PI) / 180) * Math.cos((b.lat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
+export const TRACKER_MODELS = ["Teltonika FMB920", "Queclink GV75", "Ruptela Trace5", "Concox GT06N", "Jimi VL103"];
+
+export function nextFleetId(existing = []) {
+  const nums = existing.map((v) => Number(String(v.id || "").replace(/\D/g, ""))).filter((n) => n > 0);
+  return `AR-${String(Math.max(15, ...nums) + 1).padStart(2, "0")}`;
 }
 
-function stepToward(lat, lng, tLat, tLng, step) {
-  const dLat = tLat - lat;
-  const dLng = tLng - lng;
-  const dist = Math.hypot(dLat, dLng) || 1e-9;
-  const move = Math.min(step, dist);
-  return { lat: lat + (dLat / dist) * move, lng: lng + (dLng / dist) * move, arrived: dist < step * 1.2 };
+export function persistableFleet(vehicles = []) {
+  const seedIds = new Set(INITIAL_FLEET.map((v) => v.id));
+  return vehicles.filter((v) => v?.id && !seedIds.has(v.id));
+}
+
+export function mergeFleet(saved = []) {
+  const extras = persistableFleet(saved);
+  return [...INITIAL_FLEET.map((v) => ({ ...v })), ...extras.map((v) => ({
+    ...v,
+    destLat: v.destLat ?? null,
+    destLng: v.destLng ?? null,
+    routePath: v.routePath || null,
+    routeKmDone: v.routeKmDone || 0,
+    trackerStatus: v.trackerStatus || "online"
+  }))];
+}
+
+export function makeVehicle(form, existing = []) {
+  const depot = DEPOTS.find((d) => d.id === form.depotId) || DEPOTS[0];
+  const plate = String(form.plate || "").trim().toUpperCase().replace(/\s+/g, " ");
+  const phone = String(form.phone || "").replace(/\D/g, "") || "905320000000";
+  return {
+    id: nextFleetId(existing),
+    plate,
+    brand: String(form.brand || "Ford").trim(),
+    model: String(form.model || "Transit").trim(),
+    driver: String(form.driver || "").trim(),
+    phone: phone.startsWith("90") ? phone : `90${phone.replace(/^0/, "")}`,
+    lat: depot.lat + 0.0028,
+    lng: depot.lng + 0.0024,
+    heading: 85,
+    speedKmh: Number(form.speedKmh || 28),
+    destId: "",
+    destLabel: "",
+    destLat: null,
+    destLng: null,
+    lastPing: new Date().toLocaleTimeString("tr-TR"),
+    lastNotify: "",
+    tripKm: 0,
+    tripStartLat: null,
+    tripStartLng: null,
+    arrivedAck: false,
+    routePath: null,
+    routeKmDone: 0,
+    routeDistanceKm: 0,
+    depotId: depot.id,
+    imei: String(form.imei || "").replace(/\D/g, ""),
+    sim: String(form.sim || "").replace(/\D/g, ""),
+    trackerModel: form.trackerModel || TRACKER_MODELS[0],
+    trackerStatus: "online"
+  };
+}
+
+export function assignDestination(v, dest, extra = {}) {
+  return {
+    ...v,
+    destId: dest.id,
+    destLabel: dest.label,
+    destLat: dest.lat,
+    destLng: dest.lng,
+    tripStartLat: v.lat,
+    tripStartLng: v.lng,
+    arrivedAck: false,
+    routePath: null,
+    routeKmDone: 0,
+    routeDistanceKm: 0,
+    ...extra
+  };
+}
+
+export function needsRoadRoute(v) {
+  return Boolean(v.destLat && v.destLng && !(v.routePath && v.routePath.length));
 }
 
 export function tickFleet(vehicles) {
-  const jitter = 0.00018;
+  const jitter = 0.00005;
   const arrivals = [];
   const nextVehicles = vehicles.map((v, i) => {
     const phase = Date.now() / 8000 + i;
     let lat = v.lat;
     let lng = v.lng;
     let heading = v.heading;
+    let routeKmDone = v.routeKmDone || 0;
     let arrived = false;
-    if (v.destLat && v.destLng) {
-      const next = stepToward(lat, lng, v.destLat, v.destLng, 0.00035 + (v.speedKmh / 40000));
+    if (v.destLat && v.destLng && v.routePath?.length) {
+      const stepKm = (Number(v.speedKmh || 24) / 3600) * 2 * 2;
+      const next = pointAlongPath(v.routePath, routeKmDone + stepKm);
       lat = next.lat;
       lng = next.lng;
-      arrived = next.arrived;
-      heading = (Math.atan2(v.destLng - v.lng, v.destLat - v.lat) * 180) / Math.PI;
-    } else {
+      heading = next.heading;
+      routeKmDone += stepKm;
+      arrived = next.done;
+    } else if (!v.destLat) {
       lat += Math.sin(phase) * jitter;
       lng += Math.cos(phase * 0.85) * jitter;
       heading = (heading + 4) % 360;
+      lat = Math.min(41.34, Math.max(40.92, lat));
+      lng = Math.min(29.08, Math.max(27.92, lng));
     }
-    lat = Math.min(41.34, Math.max(40.92, lat));
-    lng = Math.min(29.08, Math.max(27.92, lng));
     if (arrived && v.destId && !v.arrivedAck) {
-      const km = Math.round(haversineKm(
+      const km = Number(v.routeDistanceKm) || pathLengthKm(v.routePath) || Math.round(haversineKm(
         { lat: v.tripStartLat ?? v.lat, lng: v.tripStartLng ?? v.lng },
         { lat: v.destLat, lng: v.destLng }
       ) * 10) / 10;
@@ -110,7 +187,10 @@ export function tickFleet(vehicles) {
         destLng: null,
         destId: "",
         tripKm: Number(v.tripKm || 0) + km,
-        arrivedAck: true
+        arrivedAck: true,
+        routePath: null,
+        routeKmDone: 0,
+        routeDistanceKm: 0
       };
     }
     return {
@@ -118,6 +198,7 @@ export function tickFleet(vehicles) {
       lat,
       lng,
       heading,
+      routeKmDone,
       lastPing: new Date().toLocaleTimeString("tr-TR"),
       destLabel: v.destLabel
     };

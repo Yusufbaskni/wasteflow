@@ -62,7 +62,7 @@ export function printPdfReport({ lots, bins, esg, metrics, econ, fx }) {
     th,td{border:1px solid #ddd;padding:6px 8px;text-align:left}
     th{background:#f4f4f4;color:#111}
   </style></head><body>
-  <h1>WasteFlow günlük ESG, kur ve gelir-gider raporu</h1>
+  <h1>WasteFlow haftalık ESG, kur ve gelir-gider raporu</h1>
   <p>${stamp()} · İstinye Üniversitesi</p>
   <h2>Canlı kur</h2>
   <table><tbody>
@@ -177,21 +177,35 @@ export function printCarbonCertificate({ esg, mass, user }) {
 
 export function printWaybill(doc) {
   if (!doc) return;
+  const s = doc.sender || {};
+  const r = doc.receiver || {};
   const sign = doc.signData ? `<img src="${doc.signData}" alt="imza" style="height:64px" />` : `<p>${doc.signer || "—"}</p>`;
   printHtml(
-    doc.id,
-    `<h1>Sevk irsaliyesi ${doc.id}</h1>
-    <p>${doc.time} · İstinye Üniversitesi WasteFlow</p>
+    `e-İrsaliye ${doc.documentNo || doc.id}`,
+    `<div style="display:flex;justify-content:space-between;gap:16px">
+      <div>
+        <div style="font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#555">GİB e-İrsaliye · ${doc.profile || "TEMELIRSALIYE"}</div>
+        <h1>e-İrsaliye</h1>
+        <p>${s.title || "İstinye Üniversitesi WasteFlow"}</p>
+      </div>
+      <div style="text-align:right;font-size:12px">
+        <div><b>Belge no</b> ${doc.documentNo || doc.id}</div>
+        <div><b>ETTN</b> ${doc.ettn || "—"}</div>
+        <div><b>Zarf</b> ${doc.zarfId || "—"}</div>
+        <div><b>Durum</b> ${doc.gibStatus || "TASLAK"} ${doc.gibCode ? `(${doc.gibCode})` : ""}</div>
+      </div>
+    </div>
+    <p style="font-size:11px;color:#666">GİB test / jüri entegratör simülasyonu — canlı mükellef GİB bağlantısı değildir.</p>
     <table><tbody>
-      <tr><th>Tür</th><td>${doc.kind}</td></tr>
-      <tr><th>Lot</th><td>${doc.lotId}</td></tr>
-      <tr><th>Materyal / EWC</th><td>${doc.material} · ${doc.ewc}</td></tr>
-      <tr><th>Tartım</th><td>${doc.kg} kg</td></tr>
-      <tr><th>Kaynak</th><td>${doc.sourceId}</td></tr>
-      <tr><th>Tesis</th><td>${doc.facility}</td></tr>
-      <tr><th>Plaka / sürücü</th><td>${doc.plate} · ${doc.driver}</td></tr>
-      <tr><th>İmza</th><td>${sign}<div>${doc.signer || ""}</div></td></tr>
+      <tr><th>Gönderici VKN</th><td>${s.vkn || ""}</td><th>Alıcı</th><td>${r.name || doc.facility || ""}</td></tr>
+      <tr><th>Gönderici adres</th><td>${s.address || ""}</td><th>Alıcı VKN</th><td>${r.vkn || ""}</td></tr>
+      <tr><th>Tür</th><td>${doc.kind}</td><th>Lot</th><td>${doc.lotId}</td></tr>
+      <tr><th>Materyal / EWC</th><td>${doc.material} · ${doc.ewc}</td><th>Tartım</th><td>${doc.kg} kg</td></tr>
+      <tr><th>Kaynak</th><td>${doc.sourceId}</td><th>Tesis</th><td>${doc.facility}</td></tr>
+      <tr><th>Plaka / sürücü</th><td>${doc.plate} · ${doc.driver}</td><th>TCKN</th><td>${doc.driverTckn || "—"}</td></tr>
+      <tr><th>Düzenleme</th><td>${doc.time}</td><th>Gönderim</th><td>${doc.sentAt || "—"}</td></tr>
+      <tr><th>İmza</th><td colspan="3">${sign}<div>${doc.signer || ""}</div></td></tr>
     </tbody></table>
-    <p style="font-size:11px;color:#444444">Lisans: İSÜ-ÇED-ATK-2026/04 · Tartım fişi ile birlikte geçerlidir.</p>`
+    <p style="font-size:11px;color:#444444">Lisans: ${s.license || "İSÜ-ÇED-ATK-2026/04"} · UBL-TR DespatchAdvice</p>`
   );
 }

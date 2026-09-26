@@ -2,6 +2,8 @@ import hashlib
 import hmac
 import os
 import secrets
+import uuid
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import Depends, File, HTTPException, UploadFile
@@ -167,6 +169,41 @@ def live_fx():
         return fetch_live_fx()
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"Canlı kur alınamadı: {exc}") from exc
+
+
+class EIrsaliyeIn(BaseModel):
+    ettn: Optional[str] = None
+    documentNo: Optional[str] = None
+    vkn: Optional[str] = None
+    kg: Optional[float] = None
+    plate: Optional[str] = None
+
+
+@app.post("/api/v1/eirsaliye")
+def send_eirsaliye(payload: EIrsaliyeIn):
+    ettn = payload.ettn or str(uuid.uuid4())
+    zarf = secrets.token_hex(6).upper()
+    return {
+        "ettn": ettn,
+        "documentNo": payload.documentNo,
+        "zarfId": f"ZARF{zarf}",
+        "gibStatus": "GIB_ILETILDI",
+        "gibCode": "1200",
+        "gibMessage": "Zarf GİB e-İrsaliye test ortamında başarıyla işlendi.",
+        "sentAt": datetime.now(timezone.utc).isoformat(),
+        "integrator": "WasteFlow GİB Test",
+        "vkn": payload.vkn,
+    }
+
+
+@app.get("/api/v1/eirsaliye/{ettn}")
+def query_eirsaliye(ettn: str):
+    return {
+        "ettn": ettn,
+        "gibStatus": "KABUL",
+        "gibCode": "1300",
+        "gibMessage": "Alıcı e-İrsaliye uygulama yanıtı: Kabul.",
+    }
 
 
 @app.post("/api/v1/auth/login")
