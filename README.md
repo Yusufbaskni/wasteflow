@@ -1,47 +1,41 @@
 # WasteFlow
 
-Endüstriyel tesis atığını **kaynaktan yeniden kullanıma** izleyen, miktarı tahminleyen ve geri dönüşüm yönlendirmesini otomatikleştiren platform.
+İstinye Üniversitesi bitirme / jüri demosu. İstanbul’da beş lisanslı tesiste (Topkapı, Zeytinburnu, Bahçelievler, İstinye, Küçükçekmece) toplanan ambalaj, metal, cam, organik ve WEEE’yi lot olarak takip ediyorum: tartım, rota, e-irsaliye, Başer / Star satışı, kadro, ESG.
 
-## Hedef kapsam
+Asıl ekran Electron + React. API FastAPI; açık değilse uygulama localStorage ile devam ediyor. Harita OSM, kur TCMB, araç güzergâhı OSRM. Canlı GİB ve gerçek GPS yok — e-irsaliye test zarfı, filo ping’i simülasyon.
 
-Holding ölçeğinde 6 tesis ailesi:
+## Ne var
 
-| Kod | Tesis | Sektör | Tipik atık |
-| --- | --- | --- | --- |
-| F-IST-01 | Marmara Sac Haddehane | Metal | MET-FE, MET-AL, HAZ-SL |
-| F-IZM-02 | Ege Polimer Ekstrüzyon | Plastik | PL-PE, PL-MIX |
-| F-ANK-03 | Başkent Gıda İşleme | Gıda | ORG, PAP |
-| F-BUR-04 | Uludağ Elektronik Montaj | Elektronik | E-WST |
-| F-KO-05 | Doğu Marmara Kimya | Kimya | HAZ-SL |
-| F-ADA-06 | Çukurova Ambalaj | Ambalaj | PAP, PL-PE |
+- Lot envanteri, EWC, QR, kantar fişi
+- Toplama noktaları + 5 depo haritası
+- 15+ araç, yol rotası, plaka / IMEI kaydı
+- e-İrsaliye (TEMELIRSALIYE, UBL XML, GİB test kodları)
+- Satış: Başer Çerkezköy, Star Hadımköy, 1 kg fiyat karşılaştırması
+- İK / müdür mesajları, IoT doluluk (kurgusal), rapor PDF
+- P&L satış fişine göre; stok “satıldı” diye şişirilmiyor
 
-Lot yaşam döngüsü: `generated → classified → routed → in_transit → received → processed → closed`.
+Giriş (demo):
 
-## Mimari
-
-- **SQL şema:** `sql/schema.sql` (SQLite varsayılan; PostgreSQL ile uyumlu)
-- **Backend:** FastAPI + SQLAlchemy (`backend/`)
-- **ML:** sentetik üretim + XGBoost / HistGradientBoosting (`ml/`)
-- **Otomasyon:** kural motoru (`backend/app/services/automation.py`)
-- **Dashboard:** React + Vite (`frontend/`)
-- **ERP:** `POST /api/v1/erp/production-events`, `GET /api/v1/erp/waste-status/{lot_code}` (`X-API-Key: demo-erp-key`)
+| kullanıcı | parola | rol |
+| --- | --- | --- |
+| yusuf.baskan | Istinye2026 | sistem |
+| operator | Operator2026 | saha |
+| yonetici | Yonetici2026 | depo müdürü |
 
 ## Çalıştırma
 
+Python 3.12+ ve Node 20 yeterli.
+
 ```bash
-cd /Users/yusufbaskani/Projects/wasteflow
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r backend/requirements.txt
-
-python ml/generate_synthetic.py
-python ml/train.py
 
 export PYTHONPATH=backend
 uvicorn app.main:app --app-dir backend --reload --port 8000
 ```
 
-Başka bir terminalde:
+Ayrı terminal:
 
 ```bash
 cd frontend
@@ -49,8 +43,19 @@ npm install
 npm run dev
 ```
 
-Pano: http://localhost:5173  
-API: http://localhost:8000/docs
+Tarayıcı: http://localhost:5173  
+Swagger: http://localhost:8000/docs
+
+Görsel sınıflandırıcı için `backend/` altında `yolov8n.pt` lazım; yoksa o sekme takılır, gerisi açılır.
+
+Mac masaüstü (Dock):
+
+```bash
+cd frontend
+npm run electron:build
+```
+
+Çıktı `frontend/release/mac-arm64/WasteFlow.app`. Windows taşınabilir exe: `npm run electron:build:win` → `frontend/release/WasteFlow-Windows.exe`.
 
 ## Test
 
@@ -58,3 +63,11 @@ API: http://localhost:8000/docs
 source .venv/bin/activate
 PYTHONPATH=backend pytest
 ```
+
+## Klasörler
+
+- `frontend/` — Vite, Electron (`electron.cjs`), sekmeler `src/App.jsx`
+- `backend/app/` — login, lot, kur (`fx.py`), e-irsaliye, görsel analiz
+- `ml/` — sentetik veri / model denemesi, demoda zorunlu değil
+
+Veri tarayıcıda `wasteflow.v1` anahtarında. SQLite `backend/wasteflow.db` git’e girmiyor.
