@@ -1,5 +1,7 @@
 let lastKey = "";
 
+// aynı uyarıyı döngüde çalmasın diye lastKey. ses kısa beep, jüri duysun diye koydum.
+
 export function playAlertTone() {
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();

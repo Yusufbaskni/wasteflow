@@ -1,3 +1,4 @@
+// pet → topkapı, mukavva → zeytinburnu, weee → bahçelievler. kural tablosu, ml değil.
 export const FACILITY_OPTIONS = [
   "FAC-01 (Topkapı)",
   "FAC-02 (Zeytinburnu)",

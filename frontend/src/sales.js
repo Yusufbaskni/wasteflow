@@ -1,3 +1,4 @@
+// alıcılar gerçek firmalar değil, jüri senaryosu. koordinatlar osb civarı.
 export const BASER = {
   id: "BASER",
   name: "Başer Geri Dönüşüm",
@@ -63,7 +64,7 @@ export function buyerById(id) {
   return BUYERS.find((b) => b.id === id) || BASER;
 }
 
-/** ₺/kg — iki alıcı birbirine yakın; hangisinin daha iyi teklif verdiği karşılaştırmada görünür. */
+// ₺/kg, eylül 2026 kaba borsa. Star biraz farklı ki karşılaştırma boş kalmasın.
 export const PRICE_TRY_KG = {
   BASER: {
     "PET Plastik": 8.4,

@@ -1,4 +1,5 @@
 const FX_KEY = "wasteflow.fx.v1";
+// kuru lot state'ine karıştırmadım, ayrı key. 30 sn'de bir çekiliyor.
 
 export function loadCachedFx() {
   try {
@@ -25,7 +26,7 @@ function saveCachedFx(fx) {
 function saneTryPerUnit(n) {
   let x = Number(n);
   if (!Number.isFinite(x) || x <= 0) return 0;
-  if (x < 1) x = 1 / x;
+  if (x < 1) x = 1 / x; // bir kere usd/try ters yazılmıştı, 1 milyon $ çıkıyordu
   if (x < 15 || x > 90) return 0;
   return Math.round(x * 10000) / 10000;
 }

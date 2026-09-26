@@ -6,6 +6,7 @@
     <title>WasteFlow · Döngüsel Ekonomi</title>
     <link rel="icon" type="image/png" href="./istinye-icon.png" />
     <script>
+      // css tema flash olmasın diye react'ten önce.
       try {
         var t = localStorage.getItem("wasteflow.theme");
         document.documentElement.setAttribute("data-theme", t === "dark" ? "dark" : "light");

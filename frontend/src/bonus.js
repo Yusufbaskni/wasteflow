@@ -2,6 +2,8 @@ import { DEPOTS, fillForDepot, lotsForDepot } from "./depots.js";
 
 const GOOD = new Set(["İŞLENDİ", "ROTALANDI", "TESLİM EDİLDİ", "ALINDI"]);
 
+// prim skoru: hacim + kalite + doluluk. %18 tavan, patrona basmıyoruz.
+
 export function bonusBand(score) {
   if (score >= 88) return { rate: 0.18, band: "A", label: "Üstün" };
   if (score >= 75) return { rate: 0.12, band: "B", label: "İyi" };

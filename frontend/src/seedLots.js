@@ -1,4 +1,4 @@
-/** Haftalık İstanbul saha kaydı — 18–25 Eylül 2026, beş depo. */
+// 18–25 Eylül 2026, haftalık saha. ağırlıklar kg.
 export const RAW_SEED_LOTS = [
   { id: "LOT-8928", day: "18.09.2026", material: "Oluklu Mukavva", weight: 1840, facility: "FAC-02 (Zeytinburnu)", purity: 91.2, status: "İŞLENDİ", sourceId: "COL-10" },
   { id: "LOT-8931", day: "19.09.2026", material: "Hurda Demir / Çelik", weight: 1260, facility: "FAC-01 (Topkapı)", purity: 88.6, status: "İŞLENDİ", sourceId: "COL-17" },

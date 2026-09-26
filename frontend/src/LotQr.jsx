@@ -4,6 +4,7 @@ import { ewcOf } from "./ewc.js";
 
 export function lotQrPayload(lot) {
   const ewc = ewcOf(lot.material);
+  // json string qrcode'a gidiyor. okuyunca lot id + atık kodu çıksın yeter.
   return JSON.stringify({
     sys: "WasteFlow",
     id: lot.id,

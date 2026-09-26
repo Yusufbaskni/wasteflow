@@ -1,4 +1,5 @@
 export const EWC_BY_MATERIAL = {
+  // atık kodları 15 01 xx ambalaj. tehlikeli ayrı.
   "PET Plastik": { code: "15 01 02", label: "Plastik ambalaj", hazardous: false },
   "HDPE Plastik": { code: "15 01 02", label: "Plastik ambalaj", hazardous: false },
   "PP Plastik": { code: "15 01 02", label: "Plastik ambalaj", hazardous: false },

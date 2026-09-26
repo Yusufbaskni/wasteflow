@@ -1,3 +1,4 @@
+// günlük tur: en yakın durak sırası. tsp yazmadım.
 function haversine(a, b) {
   const R = 6371;
   const dLat = ((b.lat - a.lat) * Math.PI) / 180;

@@ -1,8 +1,8 @@
 import { saleAmount, salePriceKg } from "./sales.js";
 
-export const DIESEL_TRY_KM = 8.4;
+export const DIESEL_TRY_KM = 8.4; // 2026 eylül, pompa ~45 tl, 8.4 kaba
 export const CIRCULARITY_TARGET = 85;
-/** Toplama + ayırma + fire: satış fiyatının payı (hurda ticareti ince marjlıdır). */
+// satışın %77'si toplama+fire. eskiden stok*fiyat deyince günlük 1 milyon $ çıkıyordu.
 const COGS_RATIO = 0.77;
 const PROCESS_TRY_KG = 0.18;
 const PERIOD_DAYS = 8;

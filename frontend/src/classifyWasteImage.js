@@ -1,4 +1,5 @@
 const MATERIALS = {
+  // yolo class id'sini buraya map ediyorum. model yoksa da bu sözlükle idare.
   cardboard: {
     detected_material: "Oluklu Mukavva / Kraft Karton",
     recyclability_percentage: 92.5,

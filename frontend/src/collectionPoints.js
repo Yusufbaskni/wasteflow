@@ -1,4 +1,5 @@
 export const COLLECTION_POINTS = [
+  // İstanbul'da 20 nokta. lat/lng google maps'ten yaklaşık.
   { id: "COL-01", material: "PET Plastik", name: "İSÜ Topkapı PET konteyneri", district: "Fatih", address: "Topkapı yerleşkesi kuzey otopark", lat: 41.0212, lng: 28.9284, facility: "FAC-01 (Topkapı)" },
   { id: "COL-02", material: "PET Plastik", name: "Eminönü aktarma PET noktası", district: "Fatih", address: "Eminönü iskele yanı geri dönüşüm adası", lat: 41.0174, lng: 28.9701, facility: "FAC-01 (Topkapı)" },
   { id: "COL-03", material: "HDPE Plastik", name: "Zeytinburnu sanayi HDPE alanı", district: "Zeytinburnu", address: "Kazlıçeşme sanayi sokağı 12", lat: 40.9889, lng: 28.9068, facility: "FAC-05 (Küçükçekmece)" },

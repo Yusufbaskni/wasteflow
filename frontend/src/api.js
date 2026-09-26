@@ -1,5 +1,7 @@
 import { loadState } from "./storage.js";
 
+// önce local, Render uyursa o. health 2.5 sn yetmezse iot dene, ikisi de ölürse son bildiğin base.
+
 export const API_CANDIDATES = [
   "http://127.0.0.1:8000",
   "https://wasteflow-backend-xens.onrender.com"

@@ -1,3 +1,4 @@
+// beş tesis, leaflet pin'leri buradan.
 export const DEPOTS = [
   { id: "FAC-01", name: "Topkapı", facility: "FAC-01 (Topkapı)", binId: "BIN-101", lat: 41.0186, lng: 28.9319 },
   { id: "FAC-02", name: "Zeytinburnu", facility: "FAC-02 (Zeytinburnu)", binId: "BIN-102", lat: 40.9938, lng: 28.9042 },

@@ -3,6 +3,8 @@ import { DEPOTS } from "./depots.js";
 import { BASER, STAR, BUYERS } from "./sales.js";
 import { haversineKm, pathLengthKm, pointAlongPath } from "./roadRoute.js";
 
+// 15 araç seed. tırlar (AR-10..) Başer/Star'a gidiyor, diğerleri depoda bekler.
+
 export { haversineKm };
 
 export const FLEET_DESTINATIONS = [
@@ -149,7 +151,7 @@ export function tickFleet(vehicles) {
     let routeKmDone = v.routeKmDone || 0;
     let arrived = false;
     if (v.destLat && v.destLng && v.routePath?.length) {
-      const stepKm = (Number(v.speedKmh || 24) / 3600) * 2 * 2;
+      const stepKm = (Number(v.speedKmh || 24) / 3600) * 2 * 2; // *2 jüri için, 48x iken tırlar ışınlanıyordu
       const next = pointAlongPath(v.routePath, routeKmDone + stepKm);
       lat = next.lat;
       lng = next.lng;

@@ -5,6 +5,8 @@ const { pathToFileURL } = require('url');
 
 const isDev = !app.isPackaged;
 
+// paketleyince file://, geliştirirken vite 5173. cors yüzünden kuru main process çekiyorum.
+
 function mimeFromName(name) {
   const ext = path.extname(name).toLowerCase();
   if (ext === '.png') return 'image/png';

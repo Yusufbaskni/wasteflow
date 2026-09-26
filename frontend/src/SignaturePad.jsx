@@ -3,6 +3,7 @@ import React, { useEffect, useRef } from "react";
 export default function SignaturePad({ onChange, height = 88 }) {
   const canvasRef = useRef(null);
   const drawing = useRef(false);
+  // canvas mouse + touch. mouseup window'da, canvas dışına çıkınca da bitsin.
 
   useEffect(() => {
     const canvas = canvasRef.current;

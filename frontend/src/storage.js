@@ -1,4 +1,4 @@
-const KEY = "wasteflow.v1";
+const KEY = "wasteflow.v1"; // tarayıcı profili değişince jüri datası uçuyor, not düş
 
 import { seedEvents } from "./chain.js";
 import { RAW_SEED_LOTS } from "./seedLots.js";
@@ -7,6 +7,7 @@ export const DEFAULT_LOTS = RAW_SEED_LOTS.map(seedEvents);
 
 function plausibleLot(lot) {
   const w = Number(lot?.weight ?? lot?.weight_kg ?? 0);
+  // csv'den 0 kg satır geliyordu, seed'i eziyordu
   return Boolean(lot?.id) && w >= 25;
 }
 

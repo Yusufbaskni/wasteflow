@@ -1,6 +1,8 @@
 import { ewcOf } from "./ewc.js";
 import { ensureEIrsaliye, makeEIrsaliye } from "./eirsaliye.js";
 
+// lot.events = kantar / teslim / karantina izi. boşsa seedEvents dolduruyor.
+
 export function nowStamp() {
   return new Date().toLocaleString("tr-TR");
 }

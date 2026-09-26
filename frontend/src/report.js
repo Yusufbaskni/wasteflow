@@ -2,6 +2,8 @@ function stamp() {
   return new Date().toISOString().slice(0, 10);
 }
 
+// excel diye csv veriyorum, office açıyor. xlsx kütüphanesi şişirdi.
+
 export function downloadExcelReport({ lots, bins, esg, metrics, econ, fx }) {
   const usd = fx?.usdTry ? Number(fx.usdTry).toFixed(4) : "";
   const eur = fx?.eurTry ? Number(fx.eurTry).toFixed(4) : "";

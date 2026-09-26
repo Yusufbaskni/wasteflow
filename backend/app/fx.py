@@ -4,6 +4,8 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 
+# tcmb xml, olmazsa frankfurter. electron da aynı url'leri çekiyor.
+
 
 def _get(url, timeout=8):
     req = urllib.request.Request(url, headers={"User-Agent": "WasteFlow/1.0"})
@@ -22,6 +24,7 @@ def _pack(usd_try, eur_try, source):
 
 
 def from_tcmb():
+    # ForexSelling — alış değil satış. jüri "canlı kur bu mu" diye soruyor.
     raw = _get("https://www.tcmb.gov.tr/kurlar/today.xml")
     root = ET.fromstring(raw)
     found = {}

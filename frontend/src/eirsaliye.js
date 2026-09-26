@@ -2,6 +2,8 @@ import { BASER, STAR } from "./sales.js";
 import { DEPOTS } from "./depots.js";
 import { ewcOf } from "./ewc.js";
 
+// VKN'ler jüri için uydurma. gerçek GİB'e basma.
+
 export const ISSUER = {
   title: "İSTİNYE ÜNİVERSİTESİ WASTEFLOW İŞLETME BİRİMİ",
   short: "WasteFlow İSÜ",

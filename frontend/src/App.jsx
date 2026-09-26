@@ -21,7 +21,7 @@ import { downloadUbl, GIB_STATUS, queryGib, receiverOptions, submitToGib } from 
 import SignaturePad from "./SignaturePad.jsx";
 import { applyTheme, loadTheme } from "./theme.js";
 import { fetchLiveFx, formatMoney, loadCachedFx } from "./fx.js";
-import { compressImageFile } from "./imageThumb.js";
+import { compressImageFile, compressPortraitFile } from "./imageThumb.js";
 import QrScanner from "./QrScanner.jsx";
 import JuryTour from "./JuryTour.jsx";
 import FleetMap from "./FleetMap.jsx";
@@ -29,12 +29,15 @@ import { assignDestination, dispatchMessage, FLEET_DESTINATIONS, INITIAL_FLEET, 
 import { fetchDrivingPath, pathLengthKm } from "./roadRoute.js";
 import { DEFAULT_INBOX, ownerOf, threadsFrom } from "./depotInbox.js";
 import { DEFAULT_SITE_INBOX, siteContact, siteThreads } from "./collectionInbox.js";
-import { DEFAULT_MANAGER_INBOX, DEFAULT_STAFF, formatTry, makeStaff, managerOf, managersForDepot, managerThreads, STAFF_DEPOTS, STAFF_TITLES, staffStats } from "./staff.js";
+import { DEFAULT_MANAGER_INBOX, DEFAULT_STAFF, formatTry, makeStaff, managerOf, managersForDepot, managerThreads, STAFF_DEPOTS, STAFF_TITLES, staffPhotoSrc, staffStats } from "./staff.js";
 import { depotPerformance, payFor } from "./bonus.js";
 import { BASER, STAR, compareKgPrices, makeSale, mergeSales, salesFor, soldLotIds, summarizeSales } from "./sales.js";
 import SalesDesk from "./SalesDesk.jsx";
 
-// --- Kurumsal Sözlük (TR / EN) ---
+// Tek dosyada tüm sekmeler duruyor, parçalamaya vaktim olmadı.
+// Durum localStorage (wasteflow.v1). API yoksa da jüri gezisi kopmasın.
+
+// TR/EN metin. dict.tr / dict.en, lang state.
 const dict = {
   tr: {
     title: "WASTEFLOW ENTERPRISE",
@@ -170,7 +173,7 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState("");
   const [qrModalLot, setQrModalLot] = useState(null);
 
-  // Görsel Analiz Durumları
+  // Görsel analiz — foto dosyası + önizleme, sonuç gelene kadar loadingAi
   const [selectedImage, setSelectedImage] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
   const [aiResult, setAiResult] = useState(null);
@@ -246,9 +249,12 @@ export default function App() {
     phone: "",
     address: "",
     shift: "Gündüz",
-    plate: ""
+    plate: "",
+    photo: ""
   });
   const photoInputRef = useRef(null);
+  const hirePhotoRef = useRef(null);
+  const staffPhotoRef = useRef(null);
   const [photoLotId, setPhotoLotId] = useState("");
   const [alertBanner, setAlertBanner] = useState("");
   const fileInputRef = useRef(null);
@@ -265,6 +271,7 @@ export default function App() {
     });
   };
 
+  // Her persist* hem state hem localStorage yazıyor. Tick her 2 sn filo basıyor, onu kaydetmiyorum.
   const persistLots = (nextLots) => {
     setLots(nextLots);
     setMetrics(metricsFromLots(nextLots));
@@ -298,6 +305,7 @@ export default function App() {
   };
 
   const persistFleetExtra = (vehicles) => {
+    // AR-01..15 seed, gerisini fleetExtra diye tutuyorum
     saveState({ fleetExtra: persistableFleet(vehicles) });
   };
 
@@ -374,12 +382,42 @@ export default function App() {
       setHrNote("Ad soyad gerekli.");
       return;
     }
+    if (!hireForm.photo) {
+      setHrNote("Özlük fotoğrafı gerekli.");
+      return;
+    }
     const row = makeStaff({ ...hireForm, name }, staffRoster);
     persistStaff([row, ...staffRoster]);
     setSelectedStaffId(row.id);
-    setHireForm((prev) => ({ ...prev, name: "", phone: "", address: "", plate: "" }));
+    setHireForm((prev) => ({ ...prev, name: "", phone: "", address: "", plate: "", photo: "" }));
     setHrNote(`${row.name} işe alındı · ${row.id} · ${row.title} · ${formatTry(row.salary)}`);
     pushAudit("HR_HIRE", `${row.id} ${row.name} ${row.title} ${row.depotId}`);
+  };
+
+  const pickHirePhoto = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    try {
+      const photo = await compressPortraitFile(file);
+      setHireForm((prev) => ({ ...prev, photo }));
+      setHrNote("Fotoğraf alındı, kaydı tamamla.");
+    } catch {
+      setHrNote("Fotoğraf okunamadı.");
+    }
+  };
+
+  const pickStaffPhoto = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !selectedStaffId) return;
+    try {
+      const photo = await compressPortraitFile(file);
+      persistStaff(staffRoster.map((s) => (s.id === selectedStaffId ? { ...s, photo } : s)));
+      setHrNote("Özlük fotoğrafı güncellendi.");
+    } catch {
+      setHrNote("Fotoğraf okunamadı.");
+    }
   };
 
   const fireStaff = (id) => {
@@ -497,6 +535,7 @@ export default function App() {
       persistLots(nextLots);
     };
     const routing = new Set();
+    // aynı araca peş peşe osrm atmasın, 429 yiyoruz
     const attachRoads = (vehicles) => {
       vehicles.forEach((v) => {
         if (!needsRoadRoute(v) || routing.has(v.id)) return;
@@ -522,7 +561,7 @@ export default function App() {
         queueMicrotask(() => attachRoads(vehicles));
         return vehicles;
       });
-    }, 2000);
+    }, 2000); // 2 sn — daha sık leaflet kilitleniyordu
     queueMicrotask(() => attachRoads(INITIAL_FLEET));
     return () => clearInterval(timer);
   }, []);
@@ -1094,7 +1133,7 @@ export default function App() {
   return (
     <div style={{ display: "flex", width: "100vw", height: "100vh", backgroundColor: "var(--bg-surface)", color: "var(--text-main)", margin: 0, padding: 0, overflow: "hidden", fontFamily: "system-ui, -apple-system, sans-serif" }}>
       
-      {/* Sol Kurumsal Navigasyon Paneli */}
+      {/* sol menü — rol tab'ları canAccess ile */}
       <div style={{ width: "250px", backgroundColor: "var(--bg-surface)", padding: "24px 16px", borderRight: "1px solid var(--border-color)", display: "flex", flexDirection: "column", height: "100vh", minHeight: 0, overflow: "hidden" }}>
         <div style={{ flexShrink: 0, padding: "0 8px", marginBottom: "16px" }}>
             <img src={LOGO_SRC} alt="İstinye Üniversitesi" className="brand-logo" style={{ width: "180px", height: "auto", marginBottom: "12px", display: "block" }} />
@@ -1145,7 +1184,7 @@ export default function App() {
               </button>
             ))}
           </nav>
-        {/* Kullanıcı Oturumu ve Dil Seçimi */}
+        {/* sağ üst: dil / tema / çıkış */}
         <div style={{ borderTop: "1px solid var(--border-color)", paddingTop: "16px", paddingLeft: "8px", paddingRight: "8px", flexShrink: 0 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
             <div>
@@ -1213,7 +1252,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* TAB 1: GÖSTERGE PANELİ */}
+        {/* gösterge */}
         {tab === "overview" && (
           <div>
             <h2 style={pageHeaderStyle}>{t.overview}</h2>
@@ -1247,7 +1286,8 @@ export default function App() {
               <div style={{ ...sectionBoxStyle, marginBottom: 16 }}>
                 <h3 style={sectionTitleStyle}>Personel araması</h3>
                 {staffHits.map((p) => (
-                  <button key={p.id} type="button" onClick={() => { setSelectedStaffId(p.id); setTab("staff"); }} style={{ display: "block", width: "100%", textAlign: "left", background: "transparent", border: "none", borderTop: "1px solid var(--border-color)", color: "var(--text-main)", padding: "8px 0", cursor: "pointer", fontSize: 12 }}>
+                  <button key={p.id} type="button" onClick={() => { setSelectedStaffId(p.id); setTab("staff"); }} style={{ display: "flex", gap: 8, alignItems: "center", width: "100%", textAlign: "left", background: "transparent", border: "none", borderTop: "1px solid var(--border-color)", color: "var(--text-main)", padding: "8px 0", cursor: "pointer", fontSize: 12 }}>
+                    <img src={staffPhotoSrc(p)} alt="" width={28} height={34} style={{ objectFit: "cover", borderRadius: 3 }} />
                     <strong style={{ color: "var(--text-main)" }}>{p.name}</strong> · {p.title} · {p.depotId} · {formatTry(p.salary)}
                   </button>
                 ))}
@@ -2086,14 +2126,20 @@ export default function App() {
               <div style={{ ...sectionBoxStyle, display: "flex", flexDirection: "column" }}>
                 {(() => {
                   const mgr = managerOf(inboxManager);
+                  const mgrStaff = staffRoster.find((p) => p.managerId === mgr.id);
                   const items = managerMessages.filter((m) => m.managerId === inboxManager);
                   return (
                     <>
-                      <h3 style={sectionTitleStyle}>{mgr.name}</h3>
-                      <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: -8, marginBottom: 12 }}>
+                      <div style={{ display: "flex", gap: 12, alignItems: "flex-start", marginBottom: 8 }}>
+                        <img src={staffPhotoSrc(mgrStaff || mgr)} alt="" width={56} height={70} style={{ objectFit: "cover", borderRadius: 4, border: "1px solid var(--border-color)" }} />
+                        <div>
+                      <h3 style={{ ...sectionTitleStyle, margin: 0 }}>{mgr.name}</h3>
+                      <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4, marginBottom: 0 }}>
                         {mgr.title} · {mgr.shift}<br />
                         {mgr.depot} · {mgr.phone}<br />
                         {mgr.address}
+                      </div>
+                        </div>
                       </div>
                       <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
                         <button type="button" style={linkBtn} onClick={() => { setFleetDestId(mgr.depotId); setTab("fleet"); }}>Filoya hedef</button>
@@ -2164,6 +2210,7 @@ export default function App() {
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead>
                     <tr style={{ backgroundColor: "var(--border-color)" }}>
+                      <th style={thStyle}></th>
                       <th style={thStyle}>AD</th>
                       <th style={thStyle}>MEVKİ</th>
                       <th style={thStyle}>DEPO</th>
@@ -2178,6 +2225,9 @@ export default function App() {
                         onClick={() => setSelectedStaffId(p.id)}
                         style={{ borderTop: "1px solid var(--border-color)", cursor: "pointer", background: selectedStaff?.id === p.id ? "var(--bg-muted)" : "transparent" }}
                       >
+                        <td style={{ ...tdStyle, width: 48, paddingRight: 4 }}>
+                          <img src={staffPhotoSrc(p)} alt="" width={36} height={44} style={{ objectFit: "cover", borderRadius: 4, display: "block", border: "1px solid var(--border-color)" }} />
+                        </td>
                         <td style={{ ...tdStyle, color: "var(--text-main)", fontWeight: 600 }}>{p.name}</td>
                         <td style={tdStyle}>{p.title}</td>
                         <td style={tdStyle}>{p.depotId}</td>
@@ -2191,7 +2241,10 @@ export default function App() {
               <div style={sectionBoxStyle}>
                 {selectedStaff && (
                   <>
-                    <h3 style={sectionTitleStyle}>{selectedStaff.name}</h3>
+                    <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+                      <img src={staffPhotoSrc(selectedStaff)} alt={selectedStaff.name} width={96} height={120} style={{ objectFit: "cover", borderRadius: 6, border: "1px solid var(--border-color)", flexShrink: 0, background: "var(--bg-muted)" }} />
+                      <div>
+                    <h3 style={{ ...sectionTitleStyle, marginTop: 0 }}>{selectedStaff.name}</h3>
                     <div style={{ fontSize: 13, color: "var(--text-main)", lineHeight: 1.8 }}>
                       {selectedStaff.id} · {selectedStaff.gender} · {selectedStaff.age} yaş<br />
                       Mevki: {selectedStaff.title}{selectedStaff.shift ? ` · ${selectedStaff.shift}` : ""}<br />
@@ -2203,7 +2256,15 @@ export default function App() {
                       {selectedStaff.plate ? <><br />Plaka: {selectedStaff.plate}</> : null}
                       {selectedStaff.hiredAt ? <><br />İşe giriş: {selectedStaff.hiredAt}</> : null}
                     </div>
+                      </div>
+                    </div>
+                    <input ref={staffPhotoRef} type="file" accept="image/*" style={{ display: "none" }} onChange={pickStaffPhoto} />
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 16 }}>
+                      {canAccess(user.role, "hr") && (
+                        <button type="button" style={linkBtn} onClick={() => staffPhotoRef.current?.click()}>
+                          {selectedStaff.photo ? "Fotoğrafı değiştir" : "Fotoğraf yükle"}
+                        </button>
+                      )}
                       {selectedStaff.kind === "müdür" && selectedStaff.managerId && (
                         <button type="button" style={btnPrimary} onClick={() => { openInboxManager(selectedStaff.managerId); setTab("managers"); }}>
                           Müdürle yazış
@@ -2271,6 +2332,20 @@ export default function App() {
               <div style={sectionBoxStyle}>
                 <h3 style={sectionTitleStyle}>Personel ekle</h3>
                 <form onSubmit={hireStaff} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <div>
+                    <label style={labelStyle}>Özlük fotoğrafı *</label>
+                    <input ref={hirePhotoRef} type="file" accept="image/*" style={{ display: "none" }} onChange={pickHirePhoto} />
+                    <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                      {hireForm.photo ? (
+                        <img src={hireForm.photo} alt="" width={72} height={90} style={{ objectFit: "cover", borderRadius: 4, border: "1px solid var(--border-color)" }} />
+                      ) : (
+                        <div style={{ width: 72, height: 90, borderRadius: 4, border: "1px dashed var(--border-color)", background: "var(--bg-muted)", fontSize: 10, color: "var(--text-muted)", display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", padding: 6 }}>foto yok</div>
+                      )}
+                      <button type="button" style={linkBtn} onClick={() => hirePhotoRef.current?.click()}>
+                        {hireForm.photo ? "Değiştir" : "Fotoğraf seç"}
+                      </button>
+                    </div>
+                  </div>
                   <div>
                     <label style={labelStyle}>Ad soyad</label>
                     <input value={hireForm.name} onChange={(e) => setHireForm({ ...hireForm, name: e.target.value })} style={inputStyle} placeholder="Örn: Ayşe Kara" />
@@ -2341,9 +2416,12 @@ export default function App() {
                 <div style={{ maxHeight: 420, overflow: "auto" }}>
                   {staffRoster.map((p) => (
                     <div key={p.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", borderTop: "1px solid var(--border-color)", padding: "8px 0" }}>
-                      <button type="button" onClick={() => setSelectedStaffId(p.id)} style={{ background: "none", border: "none", color: "var(--text-main)", textAlign: "left", cursor: "pointer", flex: 1, padding: 0 }}>
+                      <button type="button" onClick={() => setSelectedStaffId(p.id)} style={{ background: "none", border: "none", color: "var(--text-main)", textAlign: "left", cursor: "pointer", flex: 1, padding: 0, display: "flex", gap: 10, alignItems: "center" }}>
+                        <img src={staffPhotoSrc(p)} alt="" width={32} height={40} style={{ objectFit: "cover", borderRadius: 3, border: "1px solid var(--border-color)" }} />
+                        <div>
                         <div style={{ fontSize: 13, fontWeight: 700, color: p.id === selectedStaffId ? "var(--text-main)" : "var(--text-main)" }}>{p.name}</div>
                         <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{p.id} · {p.title} · {p.depotId} · {formatTry(p.salary)} + {formatTry(payFor(p, perfById).bonus)}</div>
+                        </div>
                       </button>
                       {p.kind === "patron" ? (
                         <span style={{ fontSize: 11, color: "var(--text-muted)" }}>kilitli</span>
@@ -2481,7 +2559,7 @@ export default function App() {
           </div>
         )}
 
-        {/* TAB 2: OPERASYON & ROTALAMA */}
+        {/* operasyon — csv ve önerilen tesis */}
         {tab === "operations" && (
           <div>
             <h2 style={pageHeaderStyle}>{t.operations}</h2>
@@ -2553,7 +2631,7 @@ export default function App() {
           </div>
         )}
 
-        {/* TAB 3: LOT ENVANTERİ & CSV */}
+        {/* lot listesi */}
         {tab === "lots" && (
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -2905,7 +2983,7 @@ export default function App() {
           </div>
         )}
 
-        {/* TAB 4: GÖRSEL MATERYAL ANALİZİ VE YÜKLEME ALANI */}
+        {/* foto ile malzeme tahmini (yolo, model yoksa boş döner) */}
         {tab === "ai_vision" && (
           <div>
             <h2 style={pageHeaderStyle}>{t.aiVision}</h2>
@@ -3016,7 +3094,7 @@ export default function App() {
           </div>
         )}
 
-        {/* TAB 5: IOT TELEMETRİ */}
+        {/* konteyner doluluk — saha cihazı yok, seed + rastgele kayma */}
         {tab === "iot" && (
           <div>
             <h2 style={pageHeaderStyle}>{t.iotBins}</h2>
@@ -3063,7 +3141,7 @@ export default function App() {
           </div>
         )}
 
-        {/* TAB 6: ESG & SÜRDÜRÜLEBİLİRLİK */}
+        {/* esg kartları */}
         {tab === "esg" && (
           <div>
             <h2 style={pageHeaderStyle}>{t.esg}</h2>
@@ -3112,7 +3190,7 @@ export default function App() {
           </div>
         )}
 
-        {/* TAB 7: SİSTEM DENETİM GÜNLÜĞÜ */}
+        {/* kim ne zaman ne yaptı */}
         {tab === "audit" && (
           <div>
             <h2 style={pageHeaderStyle}>{t.audit}</h2>
@@ -3132,7 +3210,7 @@ export default function App() {
           </div>
         )}
 
-        {/* TAB 8: SİSTEM & ENTEGRASYON */}
+        {/* api adresi, kullanıcı ekleme */}
         {tab === "settings" && (
           <div>
             <h2 style={pageHeaderStyle}>{t.settings}</h2>
@@ -3240,7 +3318,7 @@ export default function App() {
   );
 }
 
-// --- Kurumsal Stil Bilesenleri ---
+// sayfa başlığı vs. inline, css class'a çekmeye üşendim.
 const pageHeaderStyle = { margin: 0, fontSize: "20px", fontWeight: "600", color: "var(--text-main)", letterSpacing: "-0.3px" };
 const sectionBoxStyle = { padding: "20px", backgroundColor: "var(--bg-surface)", borderRadius: "6px", border: "1px solid var(--border-color)" };
 const sectionTitleStyle = { margin: "0 0 16px 0", fontSize: "15px", fontWeight: "600", color: "var(--text-main)" };

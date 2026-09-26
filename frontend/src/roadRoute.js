@@ -1,6 +1,6 @@
 const OSRM_BASES = [
   "https://router.project-osrm.org",
-  "https://routing.openstreetmap.de/routed-car"
+  "https://routing.openstreetmap.de/routed-car" // almanya yedek, demo sunucu düşüyor
 ];
 
 const cache = new Map();

@@ -1,4 +1,5 @@
 export const THEME_KEY = "wasteflow.theme";
+// html'de data-theme, css değişkenleri styles.css'te. koyu modda logo invert.
 
 export function loadTheme() {
   try {

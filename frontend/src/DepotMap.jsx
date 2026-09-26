@@ -5,6 +5,8 @@ import { DEPOTS, fillForDepot, pinColor } from "./depots.js";
 import { COLLECTION_POINTS } from "./collectionPoints.js";
 import { BUYERS } from "./sales.js";
 
+// harita pin rengi doluluğa göre. alıcılar da aynı katmanda, karışmasın diye farklı ikon.
+
 export default function DepotMap({
   bins,
   selectedId,

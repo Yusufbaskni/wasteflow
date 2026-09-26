@@ -2,6 +2,8 @@ import React from "react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { MATERIALS, salePriceKg } from "./sales.js";
 
+// Başer ve Star aynı bileşen, buyer prop.
+
 export default function SalesDesk({
   buyer,
   book,

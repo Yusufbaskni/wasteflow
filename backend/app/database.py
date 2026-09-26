@@ -2,7 +2,7 @@ import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-# Render / Supabase varsayılan olarak 'postgres://' verebilir, SQLAlchemy 2.0+ 'postgresql://' ister.
+# render bazen postgres:// veriyor, sqlalchemy 2 postgresql:// istiyor.
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./wasteflow.db")
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)

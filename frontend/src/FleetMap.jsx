@@ -3,6 +3,8 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { BUYERS } from "./sales.js";
 
+// leaflet instance'ı effect'te bir kere. her tick layer.clearLayers.
+
 export default function FleetMap({ vehicles, selectedId, onSelect }) {
   const mapRef = useRef(null);
   const layerRef = useRef(null);

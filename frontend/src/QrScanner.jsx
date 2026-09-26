@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import jsQR from "jsqr";
 
 function extractLotId(raw) {
+  // qr bazen json, bazen düz LOT-xxxx. ikisini de yut.
   const text = String(raw || "").trim();
   try {
     const parsed = JSON.parse(text);

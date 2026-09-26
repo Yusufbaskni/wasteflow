@@ -1,5 +1,7 @@
 import { DEPOTS, fillForDepot, lotsForDepot } from "./depots.js";
 
+// 7 gün: mevcut doluluk + lot'tan kaba artış. istatistik değil.
+
 export function sevenDayForecast(bins, lots) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);

@@ -1,3 +1,4 @@
+// sahadaki depo mesajları. okunmamış kırmızı badge.
 export const DEPOT_OWNERS = [
   { depotId: "FAC-01", depot: "FAC-01 (Topkapı)", owner: "Kemal Yılmaz", phone: "0212 455 01 01" },
   { depotId: "FAC-02", depot: "FAC-02 (Zeytinburnu)", owner: "Selin Arslan", phone: "0212 455 02 02" },

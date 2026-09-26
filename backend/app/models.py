@@ -2,6 +2,8 @@ from sqlalchemy import Column, Integer, String, Float, DateTime
 from datetime import datetime
 from .database import Base
 
+# sqlite. lot/bin id string çünkü seed LOT-xxxx.
+
 class WasteLotModel(Base):
     __tablename__ = "waste_lots"
 

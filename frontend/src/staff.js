@@ -1,4 +1,5 @@
 export const DEPOT_MANAGERS = [
+  // depo başı gündüz + gece. isimler uydurma, maaş 2026 kaba.
   { id: "MGR-01A", depotId: "FAC-01", depot: "FAC-01 (Topkapı)", title: "Depo Müdürü", shift: "Gündüz", name: "Kemal Yılmaz", gender: "Erkek", age: 46, phone: "0532 410 0101", salary: 108500, address: "Maltepe Mah. Hadımköy Cad. No:18 Fatih / İstanbul" },
   { id: "MGR-01B", depotId: "FAC-01", depot: "FAC-01 (Topkapı)", title: "Vardiya Müdürü", shift: "Gece", name: "Leyla Acar", gender: "Kadın", age: 39, phone: "0532 410 0102", salary: 86500, address: "Sulukule Cad. No:7 Fatih / İstanbul" },
   { id: "MGR-02A", depotId: "FAC-02", depot: "FAC-02 (Zeytinburnu)", title: "Depo Müdürü", shift: "Gündüz", name: "Selin Arslan", gender: "Kadın", age: 44, phone: "0532 410 0201", salary: 106000, address: "Seyitnizam Mah. Abay Cad. No:22 Zeytinburnu / İstanbul" },
@@ -72,6 +73,30 @@ function person({ id, name, gender, age, title, depotId, depot, salary, address,
   return { id, name, gender, age, title, depotId, depot, salary, address, phone, ...extra };
 }
 
+function hashId(s) {
+  let h = 2166136261;
+  const t = String(s || "x");
+  for (let i = 0; i < t.length; i += 1) h = Math.imul(h ^ t.charCodeAt(i), 16777619);
+  return h >>> 0;
+}
+
+// yüklenmemişse kimlik fotoğrafı gibi svg. 120 kişi dataurl tutunca localStorage şişiyor.
+export function staffPhotoSrc(p) {
+  if (p?.photo) return p.photo;
+  const h = hashId(p?.id || p?.name);
+  const woman = String(p?.gender || "").toLowerCase().includes("kadın") || String(p?.gender || "").toLowerCase().includes("kadin");
+  const skins = ["#f6d7b0", "#e8c39e", "#d2a679", "#c68642", "#8d5524"];
+  const hairs = ["#1c1410", "#3b2314", "#5c3a21", "#2e2e2e", "#6d4c41"];
+  const shirts = ["#1B4F72", "#145A32", "#4A235A", "#1A5276", "#7B241C", "#1C2833"];
+  const bgs = ["#dfe6e9", "#eadfc8", "#d5d8dc", "#d6eaf8"];
+  const skin = skins[h % skins.length];
+  const hair = hairs[(h >> 3) % hairs.length];
+  const shirt = shirts[(h >> 6) % shirts.length];
+  const bg = bgs[(h >> 9) % bgs.length];
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 100"><rect width="80" height="100" fill="${bg}"/>${woman ? `<ellipse cx="40" cy="50" rx="28" ry="36" fill="${hair}"/>` : ""}<ellipse cx="40" cy="94" rx="34" ry="24" fill="${shirt}"/><circle cx="40" cy="42" r="22" fill="${skin}"/>${woman ? `<path d="M16 46 Q40 82 64 46" fill="${hair}"/>` : `<rect x="16" y="20" width="48" height="16" rx="8" fill="${hair}"/>`}<ellipse cx="32" cy="42" rx="3" ry="3.5" fill="#2c2416"/><ellipse cx="48" cy="42" rx="3" ry="3.5" fill="#2c2416"/><path d="M34 54 Q40 59 46 54" fill="none" stroke="#8d6e63" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
 export const STAFF_TITLES = ["Patron", "Depo Müdürü", "Vardiya Müdürü", "Şoför", ...ROLES.map((r) => r.title)];
 
 export const STAFF_DEPOTS = DEPOT_LIST;
@@ -99,7 +124,8 @@ export function makeStaff(partial, roster = []) {
       kind,
       shift: partial.shift || "Gündüz",
       plate: partial.plate || "",
-      hiredAt: partial.hiredAt || new Date().toLocaleString("tr-TR")
+      hiredAt: partial.hiredAt || new Date().toLocaleString("tr-TR"),
+      photo: partial.photo || ""
     }
   });
 }
