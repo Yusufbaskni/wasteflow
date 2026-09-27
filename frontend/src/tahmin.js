@@ -1,4 +1,4 @@
-import { DEPOTS, fillForDepot, lotsForDepot } from "./depots.js";
+import { DEPOTS, fillForDepot, lotsForDepot } from "./depolar.js";
 
 // 7 gün: mevcut doluluk + lot'tan kaba artış. istatistik değil.
 

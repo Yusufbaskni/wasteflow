@@ -19,8 +19,8 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from sqlalchemy.orm import Session  # noqa: E402
 
-from app.database import Base, SessionLocal, engine  # noqa: E402
-from app.models import (  # noqa: E402
+from app.veritabani import Base, SessionLocal, engine  # noqa: E402
+from app.modeller import (  # noqa: E402
     AutomationRule,
     Destination,
     Facility,
@@ -31,7 +31,7 @@ from app.models import (  # noqa: E402
     WasteLot,
     WasteType,
 )
-from app.services.automation import add_event, route_lot  # noqa: E402
+from app.services.otomasyon import add_event, route_lot  # noqa: E402
 
 RNG = random.Random(42)
 

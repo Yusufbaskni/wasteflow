@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import QRCode from "qrcode";
-import { ewcOf } from "./ewc.js";
+import { ewcOf } from "./atikKodu.js";
 
 export function lotQrPayload(lot) {
   const ewc = ewcOf(lot.material);

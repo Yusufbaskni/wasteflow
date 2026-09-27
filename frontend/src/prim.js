@@ -1,4 +1,4 @@
-import { DEPOTS, fillForDepot, lotsForDepot } from "./depots.js";
+import { DEPOTS, fillForDepot, lotsForDepot } from "./depolar.js";
 
 const GOOD = new Set(["İŞLENDİ", "ROTALANDI", "TESLİM EDİLDİ", "ALINDI"]);
 

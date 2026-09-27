@@ -1,9 +1,9 @@
 import React, { useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { DEPOTS, fillForDepot, pinColor } from "./depots.js";
-import { COLLECTION_POINTS } from "./collectionPoints.js";
-import { BUYERS } from "./sales.js";
+import { DEPOTS, fillForDepot, pinColor } from "./depolar.js";
+import { COLLECTION_POINTS } from "./toplamaNoktalari.js";
+import { BUYERS } from "./satis.js";
 
 // harita pin rengi doluluğa göre. alıcılar da aynı katmanda, karışmasın diye farklı ikon.
 

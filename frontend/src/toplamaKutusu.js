@@ -1,4 +1,4 @@
-import { COLLECTION_POINTS } from "./collectionPoints.js";
+import { COLLECTION_POINTS } from "./toplamaNoktalari.js";
 
 const CONTACTS = [
   "Ali Korkmaz", "Ece Yaman", "Barış Tekin", "Nilay Sönmez", "Kerem Ulu",

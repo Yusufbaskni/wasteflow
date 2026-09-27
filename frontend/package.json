@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "main": "electron.cjs",
+  "main": "elektron.cjs",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -20,8 +20,8 @@
     },
     "files": [
       "dist/**/*",
-      "electron.cjs",
-      "preload.cjs"
+      "elektron.cjs",
+      "onyukleme.cjs"
     ],
     "mac": {
       "icon": "build-assets/icon.icns",

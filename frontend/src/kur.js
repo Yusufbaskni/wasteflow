@@ -69,7 +69,7 @@ async function fromDesktop() {
 }
 
 async function fromLocalApi() {
-  const { apiFetch } = await import("./api.js");
+  const { apiFetch } = await import("./apiKatmani.js");
   const t = withTimeout(10000);
   try {
     const res = await apiFetch("/api/v1/fx", { signal: t.signal, cache: "no-store" });

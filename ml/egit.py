@@ -22,9 +22,9 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from sqlalchemy import func  # noqa: E402
 
-from app.config import MODEL_DIR  # noqa: E402
-from app.database import SessionLocal  # noqa: E402
-from app.models import Facility, Forecast, ProductionLine, ProductionRecord, RecyclingOutcome, WasteType  # noqa: E402
+from app.ayar import MODEL_DIR  # noqa: E402
+from app.veritabani import SessionLocal  # noqa: E402
+from app.modeller import Facility, Forecast, ProductionLine, ProductionRecord, RecyclingOutcome, WasteType  # noqa: E402
 
 try:
     from xgboost import XGBRegressor

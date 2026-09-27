@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, String, Float, DateTime
 from datetime import datetime
-from .database import Base
+from .veritabani import Base
 
 # sqlite. lot/bin id string çünkü seed LOT-xxxx.
 

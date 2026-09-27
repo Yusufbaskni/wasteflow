@@ -1,7 +1,7 @@
-import { COLLECTION_POINTS } from "./collectionPoints.js";
-import { DEPOTS } from "./depots.js";
-import { BASER, STAR, BUYERS } from "./sales.js";
-import { haversineKm, pathLengthKm, pointAlongPath } from "./roadRoute.js";
+import { COLLECTION_POINTS } from "./toplamaNoktalari.js";
+import { DEPOTS } from "./depolar.js";
+import { BASER, STAR, BUYERS } from "./satis.js";
+import { haversineKm, pathLengthKm, pointAlongPath } from "./yolRotasi.js";
 
 // 15 araç seed. tırlar (AR-10..) Başer/Star'a gidiyor, diğerleri depoda bekler.
 

@@ -1,10 +1,10 @@
 from fastapi.testclient import TestClient
 
-from app.database import Base, engine, SessionLocal
-from app.main import app
-from app.models import AutomationRule, Destination, Facility, Organization, ProductionLine, WasteType
-from app.services.automation import match_rule, route_lot
-from app.models import WasteLot
+from app.veritabani import Base, engine, SessionLocal
+from app.ana import app
+from app.modeller import AutomationRule, Destination, Facility, Organization, ProductionLine, WasteType
+from app.services.otomasyon import match_rule, route_lot
+from app.modeller import WasteLot
 from datetime import date
 
 

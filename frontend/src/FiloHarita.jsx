@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { BUYERS } from "./sales.js";
+import { BUYERS } from "./satis.js";
 
 // leaflet instance'ı effect'te bir kere. her tick layer.clearLayers.
 

@@ -32,7 +32,7 @@ source .venv/bin/activate
 pip install -r backend/requirements.txt
 
 export PYTHONPATH=backend
-uvicorn app.main:app --app-dir backend --reload --port 8000
+uvicorn app.ana:app --app-dir backend --reload --port 8000
 ```
 
 Ayrı terminal:
@@ -66,8 +66,8 @@ PYTHONPATH=backend pytest
 
 ## Klasörler
 
-- `frontend/` — Vite, Electron (`electron.cjs`), sekmeler `src/App.jsx`
-- `backend/app/` — login, lot, kur (`fx.py`), e-irsaliye, görsel analiz
+- `frontend/` — Vite, Electron (`elektron.cjs`), sekmeler `src/Uygulama.jsx`
+- `backend/app/` — login, lot, kur (`kur.py`), e-irsaliye, görsel analiz
 - `ml/` — sentetik veri / model denemesi, demoda zorunlu değil
 
 Veri tarayıcıda `wasteflow.v1` anahtarında. SQLite `backend/wasteflow.db` git’e girmiyor.

@@ -1,4 +1,4 @@
-import { ewcOf } from "./ewc.js";
+import { ewcOf } from "./atikKodu.js";
 import { ensureEIrsaliye, makeEIrsaliye } from "./eirsaliye.js";
 
 // lot.events = kantar / teslim / karantina izi. boşsa seedEvents dolduruyor.

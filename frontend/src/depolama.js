@@ -1,7 +1,7 @@
 const KEY = "wasteflow.v1"; // tarayıcı profili değişince jüri datası uçuyor, not düş
 
-import { seedEvents } from "./chain.js";
-import { RAW_SEED_LOTS } from "./seedLots.js";
+import { seedEvents } from "./zincir.js";
+import { RAW_SEED_LOTS } from "./tohumLotlar.js";
 
 export const DEFAULT_LOTS = RAW_SEED_LOTS.map(seedEvents);
 

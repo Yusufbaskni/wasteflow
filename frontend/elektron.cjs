@@ -21,7 +21,7 @@ function createWindow() {
     height: 800,
     icon: path.join(__dirname, 'dist', 'istinye-icon.png'),
     webPreferences: {
-      preload: path.join(__dirname, 'preload.cjs'),
+      preload: path.join(__dirname, 'onyukleme.cjs'),
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: false

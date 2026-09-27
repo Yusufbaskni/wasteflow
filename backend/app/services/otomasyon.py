@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from ..models import AutomationRule, AutomationRun, Destination, LotEvent, WasteLot, WasteType
+from ..modeller import AutomationRule, AutomationRun, Destination, LotEvent, WasteLot, WasteType
 
 STAGES = [
     "generated",

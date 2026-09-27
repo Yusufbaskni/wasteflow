@@ -1,6 +1,6 @@
 import React from "react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { MATERIALS, salePriceKg } from "./sales.js";
+import { MATERIALS, salePriceKg } from "./satis.js";
 
 // Başer ve Star aynı bileşen, buyer prop.
 

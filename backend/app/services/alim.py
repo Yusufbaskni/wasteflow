@@ -2,8 +2,8 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from ..models import Facility, ProductionLine, ProductionRecord, WasteLot, WasteType
-from .automation import add_event, route_lot
+from ..modeller import Facility, ProductionLine, ProductionRecord, WasteLot, WasteType
+from .otomasyon import add_event, route_lot
 
 
 def ingest_production(db: Session, payload) -> WasteLot:

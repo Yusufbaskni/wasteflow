@@ -12,16 +12,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.classifier import classify_image_bytes
-from app.fx import fetch_live_fx
-from app.schemas import VisualAnalysisResponse
+from app.siniflandirici import classify_image_bytes
+from app.kur import fetch_live_fx
+from app.semalar import VisualAnalysisResponse
 
 try:
-    from .database import engine, Base, get_db
-    from .models import WasteLotModel, IoTBinModel, AuditLogModel, UserModel
+    from .veritabani import engine, Base, get_db
+    from .modeller import WasteLotModel, IoTBinModel, AuditLogModel, UserModel
 except ImportError:
-    from database import engine, Base, get_db
-    from models import WasteLotModel, IoTBinModel, AuditLogModel, UserModel
+    from veritabani import engine, Base, get_db
+    from modeller import WasteLotModel, IoTBinModel, AuditLogModel, UserModel
 
 Base.metadata.create_all(bind=engine)
 
@@ -308,7 +308,7 @@ def patch_lot(lot_id: str, payload: LotPatchSchema, db: Session = Depends(get_db
 
 @app.post("/api/v1/lots/route")
 def route_lots(payload: RouteRequest, db: Session = Depends(get_db)):
-    from app.routing import recommend_facility
+    from app.rota import recommend_facility
 
     query = db.query(WasteLotModel)
     if payload.lot_ids:

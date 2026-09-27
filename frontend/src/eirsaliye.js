@@ -1,6 +1,6 @@
-import { BASER, STAR } from "./sales.js";
-import { DEPOTS } from "./depots.js";
-import { ewcOf } from "./ewc.js";
+import { BASER, STAR } from "./satis.js";
+import { DEPOTS } from "./depolar.js";
+import { ewcOf } from "./atikKodu.js";
 
 // VKN'ler jüri için uydurma. gerçek GİB'e basma.
 
@@ -210,7 +210,7 @@ export function downloadUbl(doc) {
 }
 
 async function tryApi(path, options) {
-  const { apiFetch } = await import("./api.js");
+  const { apiFetch } = await import("./apiKatmani.js");
   const res = await apiFetch(path, options);
   if (!res.ok) throw new Error(String(res.status));
   return res.json();

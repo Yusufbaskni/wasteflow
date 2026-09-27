@@ -3,7 +3,7 @@ from datetime import date, timedelta
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from ..models import AutomationRun, Facility, Forecast, RecyclingOutcome, WasteLot, WasteType
+from ..modeller import AutomationRun, Facility, Forecast, RecyclingOutcome, WasteLot, WasteType
 
 
 def circular_metrics(db: Session) -> dict:

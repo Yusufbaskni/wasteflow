@@ -1,4 +1,4 @@
-import { saleAmount, salePriceKg } from "./sales.js";
+import { saleAmount, salePriceKg } from "./satis.js";
 
 export const DIESEL_TRY_KM = 8.4; // 2026 eylül, pompa ~45 tl, 8.4 kaba
 export const CIRCULARITY_TARGET = 85;

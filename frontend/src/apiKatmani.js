@@ -1,4 +1,4 @@
-import { loadState } from "./storage.js";
+import { loadState } from "./depolama.js";
 
 // önce local, Render uyursa o. health 2.5 sn yetmezse iot dene, ikisi de ölürse son bildiğin base.
 
