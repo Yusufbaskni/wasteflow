@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 
 def _get(url, timeout=8):
-    req = urllib.request.Request(url, headers={"User-Agent": "WasteFlow/1.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": "AtikTakip/1.0"})
     with urllib.request.urlopen(req, timeout=timeout) as res:
         return res.read()
 

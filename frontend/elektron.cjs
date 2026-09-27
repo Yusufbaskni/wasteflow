@@ -19,6 +19,7 @@ function createWindow() {
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
+    title: "Atık Takip Sistemi",
     icon: path.join(__dirname, 'dist', 'istinye-icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'onyukleme.cjs'),
@@ -57,7 +58,7 @@ function createWindow() {
       autoUpdater.logger.transports.file.level = 'info';
       autoUpdater.checkForUpdatesAndNotify();
       autoUpdater.on('update-available', () => {
-        console.log('Yeni bir WasteFlow güncellemesi bulundu.');
+        console.log('Yeni bir Atık Takip Sistemi güncellemesi bulundu.');
       });
       autoUpdater.on('update-downloaded', () => {
         autoUpdater.quitAndInstall();

@@ -210,7 +210,7 @@ export function tickFleet(vehicles) {
 
 export function dispatchMessage(vehicle, dest) {
   const maps = `https://maps.google.com/?q=${dest.lat},${dest.lng}`;
-  return `WasteFlow görev: ${vehicle.plate} / ${vehicle.driver}. Hedef: ${dest.label}. Konum: ${maps}`;
+  return `Atık Takip görev: ${vehicle.plate} / ${vehicle.driver}. Hedef: ${dest.label}. Konum: ${maps}`;
 }
 
 export function smsHref(phone, text) {

@@ -8,7 +8,7 @@ export function downloadExcelReport({ lots, bins, esg, metrics, econ, fx }) {
   const usd = fx?.usdTry ? Number(fx.usdTry).toFixed(4) : "";
   const eur = fx?.eurTry ? Number(fx.eurTry).toFixed(4) : "";
   const lines = [
-    "WasteFlow Günlük Rapor",
+    "Atık Takip Sistemi Günlük Rapor",
     `Tarih,${stamp()}`,
     `USD/TRY,${usd}`,
     `EUR/TRY,${eur}`,
@@ -47,7 +47,7 @@ export function downloadExcelReport({ lots, bins, esg, metrics, econ, fx }) {
   const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = `wasteflow-rapor-${stamp()}.csv`;
+  a.download = `atik-takip-rapor-${stamp()}.csv`;
   a.click();
   URL.revokeObjectURL(a.href);
 }
@@ -56,7 +56,7 @@ export function printPdfReport({ lots, bins, esg, metrics, econ, fx }) {
   const usd = fx?.usdTry ? Number(fx.usdTry).toFixed(4) : "-";
   const eur = fx?.eurTry ? Number(fx.eurTry).toFixed(4) : "-";
   const n = (v, d = 2) => Number(v || 0).toLocaleString("tr-TR", { minimumFractionDigits: d, maximumFractionDigits: d });
-  const html = `<!doctype html><html><head><meta charset="utf-8"><title>WasteFlow Rapor</title>
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Atık Takip Sistemi Rapor</title>
   <style>
     body{font-family:system-ui,sans-serif;padding:32px;color:#111}
     h1{font-size:20px;margin:0 0 8px}
@@ -64,7 +64,7 @@ export function printPdfReport({ lots, bins, esg, metrics, econ, fx }) {
     th,td{border:1px solid #ddd;padding:6px 8px;text-align:left}
     th{background:#f4f4f4;color:#111}
   </style></head><body>
-  <h1>WasteFlow haftalık ESG, kur ve gelir-gider raporu</h1>
+  <h1>Atık Takip Sistemi haftalık ESG, kur ve gelir-gider raporu</h1>
   <p>${stamp()} · İstinye Üniversitesi</p>
   <h2>Canlı kur</h2>
   <table><tbody>
@@ -145,7 +145,7 @@ function printHtml(title, htmlBody) {
 
 export function printAuditPdf(logs) {
   printHtml(
-    "WasteFlow Denetim",
+    "Atık Takip Sistemi Denetim",
     `<h1>Sistem denetim günlüğü</h1><p>${stamp()} · İstinye Üniversitesi</p>
     <table><thead><tr><th>Saat</th><th>İşlem</th><th>Detay</th></tr></thead><tbody>
     ${(logs || []).map((l) => `<tr><td>${l.timestamp || ""}</td><td>${l.action || ""}</td><td>${l.detail || ""}</td></tr>`).join("")}
@@ -160,14 +160,14 @@ export function printDriverManifest(routes) {
     <table><thead><tr><th>#</th><th>Kod</th><th>Nokta</th><th>Materyal</th><th>Doluluk</th><th>Etap km</th></tr></thead><tbody>
     ${r.stops.map((s) => `<tr><td>${s.order}</td><td>${s.id}</td><td>${s.name}</td><td>${s.material}</td><td>%${s.fill ?? "-"}</td><td>${s.legKm}</td></tr>`).join("")}
     </tbody></table>`).join("");
-  printHtml("Sürücü listesi", `<h1>WasteFlow günlük toplama listesi</h1><p>${stamp()}</p>${blocks}`);
+  printHtml("Sürücü listesi", `<h1>Atık Takip Sistemi günlük toplama listesi</h1><p>${stamp()}</p>${blocks}`);
 }
 
 export function printCarbonCertificate({ esg, mass, user }) {
   printHtml(
     "Karbon sertifikası",
     `<div style="border:2px solid #111111;padding:36px;text-align:center">
-      <div style="font-size:11px;letter-spacing:2px;color:#444444;font-weight:700">İSTİNYE ÜNİVERSİTESİ · WASTEFLOW</div>
+      <div style="font-size:11px;letter-spacing:2px;color:#444444;font-weight:700">İSTİNYE ÜNİVERSİTESİ · ATIK TAKİP SİSTEMİ</div>
       <h1 style="font-size:22px;margin:16px 0 8px">Karbon Kaçınma Sertifikası</h1>
       <p>Tarih ${stamp()} · Düzenleyen ${user || "Sistem"}</p>
       <p style="font-size:42px;font-weight:800;margin:28px 0;color:#111111">${esg?.co2_avoided_tons ?? 0} t CO₂</p>
@@ -188,7 +188,7 @@ export function printWaybill(doc) {
       <div>
         <div style="font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#555">GİB e-İrsaliye · ${doc.profile || "TEMELIRSALIYE"}</div>
         <h1>e-İrsaliye</h1>
-        <p>${s.title || "İstinye Üniversitesi WasteFlow"}</p>
+        <p>${s.title || "İstinye Üniversitesi Atık Takip Sistemi"}</p>
       </div>
       <div style="text-align:right;font-size:12px">
         <div><b>Belge no</b> ${doc.documentNo || doc.id}</div>

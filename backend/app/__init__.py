@@ -1,1 +1,1 @@
-"""WasteFlow backend package."""
+"""Atık Takip Sistemi API paketi."""

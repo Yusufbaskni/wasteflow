@@ -1,4 +1,4 @@
-# WasteFlow
+# Atık Takip Sistemi
 
 İstinye Üniversitesi bitirme / jüri demosu. İstanbul’da beş lisanslı tesiste (Topkapı, Zeytinburnu, Bahçelievler, İstinye, Küçükçekmece) toplanan ambalaj, metal, cam, organik ve WEEE’yi lot olarak takip ediyorum: tartım, rota, e-irsaliye, Başer / Star satışı, kadro, ESG.
 
@@ -55,7 +55,7 @@ cd frontend
 npm run electron:build
 ```
 
-Çıktı `frontend/release/mac-arm64/WasteFlow.app`. Windows taşınabilir exe: `npm run electron:build:win` → `frontend/release/WasteFlow-Windows.exe`.
+Çıktı `frontend/release/mac-arm64/Atık Takip Sistemi.app`. Windows taşınabilir exe: `npm run electron:build:win` → `frontend/release/Atik-Takip-Sistemi-Windows.exe`.
 
 ## Test
 

@@ -25,8 +25,8 @@ except ImportError:
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="WasteFlow Enterprise Real API", version="2.0.0")
-# title'ı enterprise bıraktım jüri slaytında öyle geçiyor
+app = FastAPI(title="Atık Takip Sistemi API", version="2.0.0")
+# title jüri slaytındaki isimle aynı
 
 app.add_middleware(
     CORSMiddleware,
@@ -194,7 +194,7 @@ def send_eirsaliye(payload: EIrsaliyeIn):
         "gibCode": "1200",
         "gibMessage": "Zarf GİB e-İrsaliye test ortamında başarıyla işlendi.",
         "sentAt": datetime.now(timezone.utc).isoformat(),
-        "integrator": "WasteFlow GİB Test",
+        "integrator": "Atık Takip Sistemi GİB Test",
         "vkn": payload.vkn,
     }
 

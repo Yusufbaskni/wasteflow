@@ -76,7 +76,7 @@ async function fromLocalApi() {
     if (!res.ok) throw new Error("api-fx");
     const data = await res.json();
     if (!data?.usdTry || !data?.eurTry) throw new Error("api-empty");
-    return pack({ usdTry: data.usdTry, eurTry: data.eurTry, source: data.source || "WasteFlow API" });
+    return pack({ usdTry: data.usdTry, eurTry: data.eurTry, source: data.source || "Atık Takip API" });
   } finally {
     t.done();
   }

@@ -14,7 +14,7 @@
   },
   "build": {
     "appId": "com.wasteflow.app",
-    "productName": "WasteFlow",
+    "productName": "Atık Takip Sistemi",
     "directories": {
       "output": "release"
     },
@@ -43,7 +43,7 @@
       ]
     },
     "portable": {
-      "artifactName": "WasteFlow-Windows.exe"
+      "artifactName": "Atik-Takip-Sistemi-Windows.exe"
     }
   },
   "dependencies": {

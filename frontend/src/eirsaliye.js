@@ -5,8 +5,8 @@ import { ewcOf } from "./atikKodu.js";
 // VKN'ler jüri için uydurma. gerçek GİB'e basma.
 
 export const ISSUER = {
-  title: "İSTİNYE ÜNİVERSİTESİ WASTEFLOW İŞLETME BİRİMİ",
-  short: "WasteFlow İSÜ",
+  title: "İSTİNYE ÜNİVERSİTESİ ATIK TAKİP SİSTEMİ İŞLETME BİRİMİ",
+  short: "Atık Takip İSÜ",
   vkn: "4790543128",
   taxOffice: "Sarıyer",
   mersis: "0479054312800016",
@@ -14,7 +14,7 @@ export const ISSUER = {
   gb: "urn:mail:wasteflow@istinye.edu.tr",
   phone: "0212 283 10 10",
   license: "İSÜ-ÇED-ATK-2026/04",
-  integrator: "WasteFlow GİB Test Entegratörü",
+  integrator: "Atık Takip Sistemi GİB Test Entegratörü",
   integratorVkn: "4790543128"
 };
 
@@ -28,11 +28,11 @@ export const GIB_STATUS = {
 };
 
 const DEPOT_PARTIES = {
-  "FAC-01": { name: "WasteFlow Topkapı Tesisi", vkn: "4790543128", taxOffice: "Fatih", address: "Topkapı Maltepe Mah. D400 üzeri, Zeytinburnu / İstanbul" },
-  "FAC-02": { name: "WasteFlow Zeytinburnu Tesisi", vkn: "4790543128", taxOffice: "Zeytinburnu", address: "Zeytinburnu 58. Bulvar, İstanbul" },
-  "FAC-03": { name: "WasteFlow Bahçelievler Tesisi", vkn: "4790543128", taxOffice: "Bahçelievler", address: "Bahçelievler Sanayi Sitesi, İstanbul" },
-  "FAC-04": { name: "WasteFlow İstinye Tesisi", vkn: "4790543128", taxOffice: "Sarıyer", address: "İstinye Üniversitesi Vadi Kampüsü, Sarıyer / İstanbul" },
-  "FAC-05": { name: "WasteFlow Küçükçekmece Tesisi", vkn: "4790543128", taxOffice: "Küçükçekmece", address: "Küçükçekmece Sanayi, İstanbul" }
+  "FAC-01": { name: "Atık Takip Topkapı Tesisi", vkn: "4790543128", taxOffice: "Fatih", address: "Topkapı Maltepe Mah. D400 üzeri, Zeytinburnu / İstanbul" },
+  "FAC-02": { name: "Atık Takip Zeytinburnu Tesisi", vkn: "4790543128", taxOffice: "Zeytinburnu", address: "Zeytinburnu 58. Bulvar, İstanbul" },
+  "FAC-03": { name: "Atık Takip Bahçelievler Tesisi", vkn: "4790543128", taxOffice: "Bahçelievler", address: "Bahçelievler Sanayi Sitesi, İstanbul" },
+  "FAC-04": { name: "Atık Takip İstinye Tesisi", vkn: "4790543128", taxOffice: "Sarıyer", address: "İstinye Üniversitesi Vadi Kampüsü, Sarıyer / İstanbul" },
+  "FAC-05": { name: "Atık Takip Küçükçekmece Tesisi", vkn: "4790543128", taxOffice: "Küçükçekmece", address: "Küçükçekmece Sanayi, İstanbul" }
 };
 
 function buyerParty(b) {

@@ -40,8 +40,8 @@ import SalesDesk from "./SatisMasasi.jsx";
 // TR/EN metin. dict.tr / dict.en, lang state.
 const dict = {
   tr: {
-    title: "WASTEFLOW ENTERPRISE",
-    subtitle: "Endüstriyel Atık Yönetimi ve Döngüsel Ekonomi Platformu",
+    title: "ATIK TAKİP SİSTEMİ",
+    subtitle: "Endüstriyel atık yönetimi",
     overview: "Gösterge Paneli",
     operations: "Operasyon & Rotalama",
     lots: "Envanter & Lot Yönetimi",
@@ -68,7 +68,7 @@ const dict = {
     printLabel: "Etiketi Yazdır",
     close: "Kapat",
     logout: "Oturumu Kapat",
-    loginTitle: "WasteFlow Kurumsal Portalı",
+    loginTitle: "Atık Takip Sistemi",
     loginSubtitle: "Yetkili Personel Kimlik Doğrulama",
     loginBtn: "Sisteme Giriş Yap",
     loginError: "Kullanıcı adı veya parola hatalı.",
@@ -89,8 +89,8 @@ const dict = {
     hr: "İnsan Kaynakları"
   },
   en: {
-    title: "WASTEFLOW ENTERPRISE",
-    subtitle: "Industrial Waste Management Platform",
+    title: "ATIK TAKİP SİSTEMİ",
+    subtitle: "Industrial waste tracking",
     overview: "Dashboard",
     operations: "Operations & Routing",
     lots: "Inventory & Lot Management",
@@ -117,7 +117,7 @@ const dict = {
     printLabel: "Print Label",
     close: "Close",
     logout: "Sign Out",
-    loginTitle: "WasteFlow Corporate Portal",
+    loginTitle: "Waste Tracking System",
     loginSubtitle: "Authorized Personnel Authentication",
     loginBtn: "Authenticate",
     loginError: "Invalid username or password.",
@@ -819,7 +819,7 @@ export default function App() {
     const href = channel === "wa" ? waHref(vehicle.phone, text) : smsHref(vehicle.phone, text);
     window.open(href, "_blank");
     if (typeof Notification !== "undefined" && Notification.permission === "granted") {
-      new Notification(`WasteFlow · ${vehicle.plate}`, { body: text });
+      new Notification(`Atık Takip · ${vehicle.plate}`, { body: text });
     } else if (typeof Notification !== "undefined" && Notification.permission !== "denied") {
       Notification.requestPermission();
     }
@@ -1027,7 +1027,7 @@ export default function App() {
       <div style={{ display: "flex", height: "100vh", backgroundColor: "var(--bg-surface)", color: "var(--text-main)", justifyContent: "center", alignItems: "center", fontFamily: "system-ui, sans-serif" }}>
         <div style={{ backgroundColor: "var(--bg-surface)", padding: "40px", borderRadius: "8px", border: "1px solid var(--border-color)", width: "360px" }}>
             <img src={LOGO_SRC} alt="İstinye Üniversitesi" className="brand-logo" style={{ width: "220px", height: "auto", marginBottom: "20px", display: "block" }} />
-          <div style={{ fontSize: "11px", letterSpacing: "2px", color: "var(--text-main)", fontWeight: "700", textTransform: "uppercase", marginBottom: "8px" }}>WASTEFLOW PLATFORM</div>
+          <div style={{ fontSize: "11px", letterSpacing: "2px", color: "var(--text-main)", fontWeight: "700", textTransform: "uppercase", marginBottom: "8px" }}>ATIK TAKİP SİSTEMİ</div>
           <h2 style={{ color: "var(--text-main)", margin: "0 0 6px 0", fontSize: "20px", fontWeight: "600" }}>{t.loginTitle}</h2>
           <p style={{ color: "var(--text-muted)", fontSize: "13px", marginBottom: "24px" }}>{t.loginSubtitle}</p>
           <form onSubmit={handleLogin} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
@@ -1138,7 +1138,7 @@ export default function App() {
         <div style={{ flexShrink: 0, padding: "0 8px", marginBottom: "16px" }}>
             <img src={LOGO_SRC} alt="İstinye Üniversitesi" className="brand-logo" style={{ width: "180px", height: "auto", marginBottom: "12px", display: "block" }} />
             <div style={{ color: "var(--text-main)", fontSize: "16px", fontWeight: "700", letterSpacing: "0.5px" }}>{t.title}</div>
-            <div style={{ color: "var(--text-muted)", fontSize: "11px", marginTop: "2px" }}>OPERATIONAL OS v2.0</div>
+            <div style={{ color: "var(--text-muted)", fontSize: "11px", marginTop: "2px" }}>İstinye · v2.0</div>
         </div>
           <nav style={{ display: "flex", flexDirection: "column", gap: "4px", flex: 1, minHeight: 0, overflowY: "scroll", overflowX: "hidden", paddingRight: 4, scrollbarWidth: "thin", scrollbarColor: "var(--scrollbar-thumb) var(--bg-surface)" }}>
             {[
@@ -1968,7 +1968,7 @@ export default function App() {
                             }}
                           >
                             <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 4 }}>
-                              {m.direction === "in" ? owner.owner : "WasteFlow"} · {m.time}
+                              {m.direction === "in" ? owner.owner : "Atık Takip"} · {m.time}
                             </div>
                             {m.body}
                           </div>
@@ -2062,7 +2062,7 @@ export default function App() {
                             }}
                           >
                             <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 4 }}>
-                              {m.direction === "in" ? site.contact : "WasteFlow"} · {m.time}
+                              {m.direction === "in" ? site.contact : "Atık Takip"} · {m.time}
                             </div>
                             {m.body}
                           </div>
@@ -2161,7 +2161,7 @@ export default function App() {
                             }}
                           >
                             <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 4 }}>
-                              {m.direction === "in" ? mgr.name : "WasteFlow"} · {m.time}
+                              {m.direction === "in" ? mgr.name : "Atık Takip"} · {m.time}
                             </div>
                             {m.body}
                           </div>
@@ -2911,7 +2911,7 @@ export default function App() {
           <div>
             <h2 style={pageHeaderStyle}>{t.priceCompare}</h2>
             <p style={{ color: "var(--text-muted)", fontSize: 12, margin: "8px 0 16px", lineHeight: 1.55 }}>
-              Aynı 1 kg malzeme için Başer (Çerkezköy) ve Star (Hadımköy) alış fiyatı. Farklar küçük tutuldu; kalın satır daha yüksek teklifi (WasteFlow için daha iyi satış) gösterir.
+              Aynı 1 kg malzeme için Başer (Çerkezköy) ve Star (Hadımköy) alış fiyatı. Farklar küçük tutuldu; kalın satır daha yüksek teklifi (sistem için daha iyi satış) gösterir.
             </p>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 16 }}>
               <div style={sectionBoxStyle}>

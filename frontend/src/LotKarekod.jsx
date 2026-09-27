@@ -6,7 +6,7 @@ export function lotQrPayload(lot) {
   const ewc = ewcOf(lot.material);
   // json string qrcode'a gidiyor. okuyunca lot id + atık kodu çıksın yeter.
   return JSON.stringify({
-    sys: "WasteFlow",
+    sys: "Atık Takip Sistemi",
     id: lot.id,
     material: lot.material,
     ewc: ewc.code,
@@ -46,7 +46,7 @@ export async function printLotLabel(lot) {
   win.document.write(`<!DOCTYPE html><html><head><title>${lot.id}</title>
     <style>body{font-family:system-ui,sans-serif;text-align:center;padding:24px;color:#111} img{width:240px;height:240px} .meta{font-size:13px;color:#444}</style>
     </head><body>
-    <div style="font-size:11px;letter-spacing:1px;color:#444444;font-weight:700">WASTEFLOW LOT ETİKETİ</div>
+    <div style="font-size:11px;letter-spacing:1px;color:#444444;font-weight:700">ATIK TAKİP SİSTEMİ · LOT ETİKETİ</div>
     <h1 style="font-size:22px;margin:12px 0">${lot.id}</h1>
     <img src="${src}" alt="${lot.id}" />
     <p class="meta">${lot.material} · EWC ${ewcOf(lot.material).code} · ${lot.weight} kg</p>

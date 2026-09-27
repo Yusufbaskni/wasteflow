@@ -32,10 +32,10 @@ export function notifyCriticalBins(bins) {
   playAlertTone();
   if (typeof Notification !== "undefined") {
     if (Notification.permission === "granted") {
-      new Notification("WasteFlow depo uyarısı", { body: `Doluluk %85+ : ${body}` });
+      new Notification("Atık Takip depo uyarısı", { body: `Doluluk %85+ : ${body}` });
     } else if (Notification.permission !== "denied") {
       Notification.requestPermission().then((p) => {
-        if (p === "granted") new Notification("WasteFlow depo uyarısı", { body: `Doluluk %85+ : ${body}` });
+        if (p === "granted") new Notification("Atık Takip depo uyarısı", { body: `Doluluk %85+ : ${body}` });
       });
     }
   }
