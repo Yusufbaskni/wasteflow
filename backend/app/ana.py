@@ -3,13 +3,14 @@ import hmac
 import os
 import secrets
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from fastapi import Depends, File, HTTPException, UploadFile
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.siniflandirici import classify_image_bytes
@@ -18,10 +19,10 @@ from app.semalar import VisualAnalysisResponse
 
 try:
     from .veritabani import engine, Base, get_db
-    from .modeller import WasteLotModel, IoTBinModel, AuditLogModel, UserModel
+    from .modeller import WasteLotModel, IoTBinModel, AuditLogModel, UserModel, SessionModel
 except ImportError:
     from veritabani import engine, Base, get_db
-    from modeller import WasteLotModel, IoTBinModel, AuditLogModel, UserModel
+    from modeller import WasteLotModel, IoTBinModel, AuditLogModel, UserModel, SessionModel
 
 Base.metadata.create_all(bind=engine)
 
@@ -39,8 +40,38 @@ app.add_middleware(
 DEMO_PASSWORD = os.getenv("WASTEFLOW_DEMO_PASSWORD", "Istinye2026")
 
 
+PBKDF2_ROUNDS = 200_000
+bearer_scheme = HTTPBearer(auto_error=False)
+SESSION_HOURS = 12
+
+
 def hash_password(password: str) -> str:
-    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+    salt = secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("ascii"), PBKDF2_ROUNDS)
+    return f"pbkdf2${salt}${digest.hex()}"
+
+
+def verify_password(password: str, stored: str) -> bool:
+    if stored.startswith("pbkdf2$"):
+        try:
+            _, salt, digest = stored.split("$", 2)
+        except ValueError:
+            return False
+        check = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("ascii"), PBKDF2_ROUNDS).hex()
+        return hmac.compare_digest(check, digest)
+    legacy = hashlib.sha256(password.encode("utf-8")).hexdigest()
+    return hmac.compare_digest(stored, legacy)
+
+
+def role_key(role: str) -> str:
+    text = (role or "").lower()
+    if ("yönetici" in text or "yonetici" in text) and "sistem" not in text:
+        return "manager"
+    if "manager" in text:
+        return "manager"
+    if "operatör" in text or "operator" in text:
+        return "operator"
+    return "admin"
 
 
 def add_audit(db: Session, action: str, detail: str):
@@ -55,8 +86,11 @@ def seed_initial_data(db: Session):
             ("yonetici", "Yonetici2026", "Tesis Yöneticisi", "Yönetici"),
         ]
         for username, password, name, role in demo_users:
-            if not db.query(UserModel).filter(UserModel.username == username).first():
+            row = db.query(UserModel).filter(UserModel.username == username).first()
+            if not row:
                 db.add(UserModel(username=username, password_hash=hash_password(password), name=name, role=role))
+            elif not str(row.password_hash).startswith("pbkdf2$") and verify_password(password, row.password_hash):
+                row.password_hash = hash_password(password)
         db.commit()
 
     bins = [
@@ -143,6 +177,44 @@ class LoginSchema(BaseModel):
     password: str
 
 
+class UserCreateSchema(BaseModel):
+    username: str = Field(min_length=2, max_length=64)
+    password: str = Field(min_length=8, max_length=128)
+    name: str = Field(min_length=1, max_length=120)
+    role: str
+
+
+class PasswordResetSchema(BaseModel):
+    password: str = Field(min_length=8, max_length=128)
+
+
+ALLOWED_ROLES = {"Sistem Yöneticisi", "Yönetici", "Operatör"}
+
+
+def current_user(
+    creds: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
+    db: Session = Depends(get_db),
+) -> UserModel:
+    if creds is None or not creds.credentials:
+        raise HTTPException(status_code=401, detail="Oturum gerekli.")
+    row = db.query(SessionModel).filter(SessionModel.token == creds.credentials).first()
+    if not row or row.expires_at < datetime.utcnow():
+        raise HTTPException(status_code=401, detail="Oturum süresi doldu.")
+    user = db.query(UserModel).filter(UserModel.username == row.username).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="Oturum gerekli.")
+    return user
+
+
+def require_role(*allowed: str):
+    def _dep(user: UserModel = Depends(current_user)) -> UserModel:
+        if role_key(user.role) not in allowed:
+            raise HTTPException(status_code=403, detail="Bu işlem için yetkiniz yok.")
+        return user
+
+    return _dep
+
+
 class RouteRequest(BaseModel):
     lot_ids: Optional[List[str]] = None
 
@@ -165,7 +237,7 @@ def health():
 
 
 @app.get("/api/v1/fx")
-def live_fx():
+def live_fx(_user: UserModel = Depends(current_user)):
     # tcmb xml, olmazsa frankfurter
     try:
         return fetch_live_fx()
@@ -182,7 +254,7 @@ class EIrsaliyeIn(BaseModel):
 
 
 @app.post("/api/v1/eirsaliye")
-def send_eirsaliye(payload: EIrsaliyeIn):
+def send_eirsaliye(payload: EIrsaliyeIn, _user: UserModel = Depends(current_user)):
     # gerçek GİB değil, zarf id basıp 1200 dönüyorum
     ettn = payload.ettn or str(uuid.uuid4())
     zarf = secrets.token_hex(6).upper()
@@ -200,7 +272,7 @@ def send_eirsaliye(payload: EIrsaliyeIn):
 
 
 @app.get("/api/v1/eirsaliye/{ettn}")
-def query_eirsaliye(ettn: str):
+def query_eirsaliye(ettn: str, _user: UserModel = Depends(current_user)):
     return {
         "ettn": ettn,
         "gibStatus": "KABUL",
@@ -211,21 +283,93 @@ def query_eirsaliye(ettn: str):
 
 @app.post("/api/v1/auth/login")
 def login(payload: LoginSchema, db: Session = Depends(get_db)):
-    user = db.query(UserModel).filter(UserModel.username == payload.username.strip().lower()).first()
-    if not user or not hmac.compare_digest(user.password_hash, hash_password(payload.password)):
+    username = payload.username.strip().lower()[:64]
+    user = db.query(UserModel).filter(UserModel.username == username).first()
+    if not user or not verify_password(payload.password, user.password_hash):
+        add_audit(db, "LOGIN_FAIL", f"{username} giriş denemesi reddedildi.")
+        db.commit()
         raise HTTPException(status_code=401, detail="Kullanıcı adı veya parola hatalı.")
+    if not str(user.password_hash).startswith("pbkdf2$"):
+        user.password_hash = hash_password(payload.password)
+    token = secrets.token_urlsafe(32)
+    db.add(SessionModel(token=token, username=user.username, expires_at=datetime.utcnow() + timedelta(hours=SESSION_HOURS)))
     add_audit(db, "LOGIN", f"{user.username} oturum açtı.")
     db.commit()
     return {
-        "token": secrets.token_urlsafe(24),
+        "token": token,
         "name": user.name,
         "role": user.role,
         "username": user.username,
     }
 
 
+@app.post("/api/v1/auth/logout")
+def logout(
+    creds: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
+    db: Session = Depends(get_db),
+    _user: UserModel = Depends(current_user),
+):
+    if creds is not None:
+        db.query(SessionModel).filter(SessionModel.token == creds.credentials).delete()
+        db.commit()
+    return {"ok": True}
+
+
+@app.post("/api/v1/users", status_code=201)
+def create_user(
+    payload: UserCreateSchema,
+    db: Session = Depends(get_db),
+    actor: UserModel = Depends(require_role("admin")),
+):
+    username = payload.username.strip().lower()
+    if payload.role not in ALLOWED_ROLES:
+        raise HTTPException(status_code=400, detail="Rol geçersiz.")
+    if db.query(UserModel).filter(UserModel.username == username).first():
+        raise HTTPException(status_code=409, detail="Bu kullanıcı zaten kayıtlı.")
+    db.add(UserModel(
+        username=username,
+        password_hash=hash_password(payload.password),
+        name=payload.name.strip(),
+        role=payload.role,
+    ))
+    add_audit(db, "USER_CREATE", f"{actor.username} kullanıcı ekledi: {username} ({payload.role}).")
+    db.commit()
+    return {"username": username, "name": payload.name.strip(), "role": payload.role}
+
+
+@app.get("/api/v1/users")
+def list_users(db: Session = Depends(get_db), _user: UserModel = Depends(require_role("admin"))):
+    rows = db.query(UserModel).order_by(UserModel.username.asc()).all()
+    return [{"username": row.username, "name": row.name, "role": row.role} for row in rows]
+
+
+@app.post("/api/v1/users/{username}/password")
+def reset_password(
+    username: str,
+    payload: PasswordResetSchema,
+    creds: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
+    db: Session = Depends(get_db),
+    actor: UserModel = Depends(require_role("admin")),
+):
+    target_name = username.strip().lower()
+    target = db.query(UserModel).filter(UserModel.username == target_name).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı.")
+    target.password_hash = hash_password(payload.password)
+    sessions = db.query(SessionModel).filter(SessionModel.username == target_name)
+    if target_name == actor.username and creds is not None:
+        sessions = sessions.filter(SessionModel.token != creds.credentials)
+    sessions.delete(synchronize_session=False)
+    add_audit(db, "PASSWORD_RESET", f"{actor.username} parolayı yeniledi: {target_name}.")
+    db.commit()
+    return {"username": target_name}
+
+
 @app.post("/api/v1/ai/classify")
-async def classify_waste_image(file: Optional[UploadFile] = File(None)):
+async def classify_waste_image(
+    file: Optional[UploadFile] = File(None),
+    _user: UserModel = Depends(require_role("admin", "operator")),
+):
     if not file:
         raise HTTPException(status_code=400, detail="Analiz için görsel dosyası gerekli.")
     contents = await file.read()
@@ -238,7 +382,7 @@ async def classify_waste_image(file: Optional[UploadFile] = File(None)):
 
 
 @app.get("/api/v1/analytics/metrics")
-def get_metrics(db: Session = Depends(get_db)):
+def get_metrics(db: Session = Depends(get_db), _user: UserModel = Depends(require_role("admin", "manager"))):
     total_lots = db.query(WasteLotModel).all()
     total_weight = sum(lot.weight_kg or 0 for lot in total_lots)
     recycled = sum(lot.weight_kg or 0 for lot in total_lots if lot.status == "İŞLENDİ")
@@ -254,7 +398,7 @@ def get_metrics(db: Session = Depends(get_db)):
 
 
 @app.get("/api/v1/esg/report")
-def get_esg_report(db: Session = Depends(get_db)):
+def get_esg_report(db: Session = Depends(get_db), _user: UserModel = Depends(require_role("admin", "manager"))):
     total_lots = db.query(WasteLotModel).all()
     total_kg = sum(lot.weight_kg or 0 for lot in total_lots)
     total_tons = total_kg / 1000.0
@@ -268,12 +412,12 @@ def get_esg_report(db: Session = Depends(get_db)):
 
 
 @app.get("/api/v1/lots")
-def get_lots(db: Session = Depends(get_db)):
+def get_lots(db: Session = Depends(get_db), user: UserModel = Depends(current_user)):
     return [serialize_lot(lot) for lot in db.query(WasteLotModel).order_by(WasteLotModel.created_at.desc()).all()]
 
 
 @app.post("/api/v1/lots")
-def create_lot(lot: LotCreateSchema, db: Session = Depends(get_db)):
+def create_lot(lot: LotCreateSchema, db: Session = Depends(get_db), user: UserModel = Depends(current_user)):
     existing = db.query(WasteLotModel).filter(WasteLotModel.id == lot.id).first()
     if existing:
         raise HTTPException(status_code=409, detail="Bu LOT ID zaten kayıtlı.")
@@ -286,28 +430,28 @@ def create_lot(lot: LotCreateSchema, db: Session = Depends(get_db)):
         status=lot.status or "YENİ KAYIT",
     )
     db.add(db_lot)
-    add_audit(db, "LOT_CREATE", f"{lot.id} veritabanına eklendi.")
+    add_audit(db, "LOT_CREATE", f"{user.username} {lot.id} veritabanına ekledi.")
     db.commit()
     db.refresh(db_lot)
     return serialize_lot(db_lot)
 
 
 @app.patch("/api/v1/lots/{lot_id}")
-def patch_lot(lot_id: str, payload: LotPatchSchema, db: Session = Depends(get_db)):
+def patch_lot(lot_id: str, payload: LotPatchSchema, db: Session = Depends(get_db), user: UserModel = Depends(current_user)):
     lot = db.query(WasteLotModel).filter(WasteLotModel.id == lot_id).first()
     if not lot:
         raise HTTPException(status_code=404, detail="Lot bulunamadı.")
     data = payload.model_dump(exclude_unset=True)
     for key, value in data.items():
         setattr(lot, key, value)
-    add_audit(db, "LOT_UPDATE", f"{lot_id} güncellendi: {data}")
+    add_audit(db, "LOT_UPDATE", f"{user.username} {lot_id} güncelledi: {data}")
     db.commit()
     db.refresh(lot)
     return serialize_lot(lot)
 
 
 @app.post("/api/v1/lots/route")
-def route_lots(payload: RouteRequest, db: Session = Depends(get_db)):
+def route_lots(payload: RouteRequest, db: Session = Depends(get_db), user: UserModel = Depends(current_user)):
     from app.rota import recommend_facility
 
     query = db.query(WasteLotModel)
@@ -324,18 +468,18 @@ def route_lots(payload: RouteRequest, db: Session = Depends(get_db)):
         lot.facility = rec["facility"]
         lot.status = "ROTALANDI"
         updates.append({"id": lot.id, **rec})
-    add_audit(db, "AI_ROUTING_EXEC", f"{len(updates)} lot otomatik rotalandı.")
+    add_audit(db, "AI_ROUTING_EXEC", f"{user.username} {len(updates)} lot rotaladı.")
     db.commit()
     return {"routed": updates}
 
 
 @app.get("/api/v1/iot/bins")
-def get_iot_bins(db: Session = Depends(get_db)):
+def get_iot_bins(db: Session = Depends(get_db), _user: UserModel = Depends(current_user)):
     return db.query(IoTBinModel).all()
 
 
 @app.get("/api/v1/audit")
-def get_audit(db: Session = Depends(get_db)):
+def get_audit(db: Session = Depends(get_db), _user: UserModel = Depends(require_role("admin", "manager"))):
     rows = db.query(AuditLogModel).order_by(AuditLogModel.id.desc()).limit(100).all()
     return [
         {
@@ -349,7 +493,10 @@ def get_audit(db: Session = Depends(get_db)):
 
 
 @app.post("/api/v1/analyze-image", response_model=VisualAnalysisResponse)
-async def analyze_waste_image(file: UploadFile = File(...)):
+async def analyze_waste_image(
+    file: UploadFile = File(...),
+    _user: UserModel = Depends(require_role("admin", "operator")),
+):
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Lütfen geçerli bir görsel dosyası yükleyin.")
     contents = await file.read()

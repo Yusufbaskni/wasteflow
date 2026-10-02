@@ -2,10 +2,10 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import "./stiller.css";
 import { classifyWasteImage } from "./atikGorsel.js";
-import { apiFetch, allLocalUsers, createLotRemote, getApiBase, loginRequest, mapLot, patchLotRemote, resolveApiBase } from "./apiKatmani.js";
+import { apiFetch, allLocalUsers, createLotRemote, getApiBase, loginRequest, logoutRequest, mapLot, patchLotRemote, resolveApiBase } from "./apiKatmani.js";
 import { DEFAULT_LOTS, esgFromLots, loadState, mergeLots, metricsFromLots, saveState } from "./depolama.js";
 import { applyRouting, FACILITY_OPTIONS, MATERIAL_OPTIONS, parseLotsCsv, recommendRoute } from "./rotaOnerisi.js";
-import { canAccess, defaultTab } from "./roller.js";
+import { canAccess, defaultTab, normalizeRole } from "./roller.js";
 import { fillForDepot, lotsForDepot, pinColor, DEPOTS } from "./depolar.js";
 import { COLLECTION_MATERIALS, COLLECTION_POINTS, groupCollectionByMaterial, sourcesForMaterial, withCollectionFill } from "./toplamaNoktalari.js";
 import { downloadExcelReport, printAuditPdf, printCarbonCertificate, printDriverManifest, printPdfReport, printWaybill } from "./rapor.js";
@@ -73,7 +73,8 @@ const dict = {
     loginSubtitle: "Yetkili Personel Kimlik Doğrulama",
     loginBtn: "Sisteme Giriş Yap",
     loginError: "Kullanıcı adı veya parola hatalı.",
-    loginHint: "Admin: yusuf.baskan / Istinye2026 · Operatör: operator / Operator2026 · Yönetici: yonetici / Yonetici2026",
+    loginHint: "Sunucu kapalıysa açılan oturum yerel demodur.",
+    localDemo: "Yerel demo oturumu",
     map: "Depo Haritası",
     reports: "Raporlar",
     collection: "Toplama Alanları",
@@ -123,7 +124,8 @@ const dict = {
     loginSubtitle: "Authorized Personnel Authentication",
     loginBtn: "Authenticate",
     loginError: "Invalid username or password.",
-    loginHint: "Admin: yusuf.baskan / Istinye2026 · Operator: operator / Operator2026 · Manager: yonetici / Yonetici2026",
+    loginHint: "If the server is down, sign-in is a local demo session.",
+    localDemo: "Local demo session",
     map: "Depot Map",
     reports: "Reports",
     collection: "Collection Sites",
@@ -194,6 +196,9 @@ export default function App() {
   const [scanOpen, setScanOpen] = useState(false);
   const [tourStep, setTourStep] = useState(-1);
   const [newUser, setNewUser] = useState({ username: "", password: "", name: "", role: "Operatör" });
+  const [resetUser, setResetUser] = useState({ username: "", password: "" });
+  const [resetNote, setResetNote] = useState("");
+  const [serverUsers, setServerUsers] = useState([]);
   const [extraUsers, setExtraUsers] = useState(() => saved.extraUsers || []);
   const [fx, setFx] = useState(() => loadCachedFx());
   const [fxBusy, setFxBusy] = useState(false);
@@ -490,6 +495,22 @@ export default function App() {
   useEffect(() => {
     if (isLoggedIn && !canAccess(user.role, tab)) setTab(defaultTab(user.role));
   }, [isLoggedIn, user.role, tab]);
+
+  useEffect(() => {
+    if (!isLoggedIn || user.localDemo || normalizeRole(user.role) !== "admin" || tab !== "settings") return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiFetch("/api/v1/users");
+        if (!res.ok) return;
+        const rows = await res.json();
+        if (!cancelled && Array.isArray(rows)) setServerUsers(rows);
+      } catch {
+        /* sunucu kapalı */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isLoggedIn, user.localDemo, user.role, tab]);
 
   const refreshFx = useCallback(async () => {
     setFxBusy(true);
@@ -789,20 +810,60 @@ export default function App() {
     }
   };
 
-  const handleAddUser = (e) => {
+  const handleAddUser = async (e) => {
     e.preventDefault();
     if (!newUser.username || !newUser.password) return;
-    const entry = {
-      username: newUser.username.trim().toLowerCase(),
-      password: newUser.password,
-      name: newUser.name || newUser.username,
-      role: newUser.role
-    };
-    const next = [...extraUsers, entry];
-    setExtraUsers(next);
-    saveState({ extraUsers: next });
-    pushAudit("USER_CREATE", `${entry.username} eklendi (${entry.role}).`);
-    setNewUser({ username: "", password: "", name: "", role: "Operatör" });
+    if (user.localDemo || normalizeRole(user.role) !== "admin") return;
+    try {
+      const res = await apiFetch("/api/v1/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: newUser.username.trim().toLowerCase(),
+          password: newUser.password,
+          name: newUser.name || newUser.username,
+          role: newUser.role
+        })
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        alert(typeof body.detail === "string" ? body.detail : "Kullanıcı kaydedilemedi.");
+        return;
+      }
+      const savedUser = await res.json();
+      const entry = { username: savedUser.username, name: savedUser.name, role: savedUser.role };
+      const next = [...extraUsers.filter((row) => row.username !== entry.username), entry];
+      setExtraUsers(next);
+      saveState({ extraUsers: next });
+      pushAudit("USER_CREATE", `${entry.username} eklendi (${entry.role}).`);
+      setNewUser({ username: "", password: "", name: "", role: "Operatör" });
+    } catch {
+      alert("Sunucuya ulaşılamadı. Parola bu cihazda saklanmaz.");
+    }
+  };
+
+  const handleResetPassword = async (e) => {
+    e.preventDefault();
+    if (!resetUser.username || !resetUser.password) return;
+    if (user.localDemo || normalizeRole(user.role) !== "admin") return;
+    setResetNote("");
+    try {
+      const res = await apiFetch(`/api/v1/users/${encodeURIComponent(resetUser.username.trim().toLowerCase())}/password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: resetUser.password })
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setResetNote(typeof body.detail === "string" ? body.detail : "Parola yenilenemedi.");
+        return;
+      }
+      pushAudit("PASSWORD_RESET", `${resetUser.username.trim().toLowerCase()} parolası yenilendi.`);
+      setResetNote(`${resetUser.username.trim().toLowerCase()} yeni parolayla girebilir. Eski oturumu kapandı.`);
+      setResetUser({ username: resetUser.username, password: "" });
+    } catch {
+      setResetNote("Sunucuya ulaşılamadı. Parola bu cihazda saklanmaz.");
+    }
   };
 
   const sendFleetNotify = (channel) => {
@@ -982,6 +1043,7 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    logoutRequest();
     setIsLoggedIn(false);
     saveState({ session: null });
     setLoginPass("");
@@ -1193,7 +1255,7 @@ export default function App() {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
             <div>
               <div style={{ fontSize: "12px", color: "var(--text-main)", fontWeight: "600" }}>{user.name}</div>
-              <div style={{ fontSize: "10px", color: "var(--text-muted)" }}>{user.role}</div>
+              <div style={{ fontSize: "10px", color: "var(--text-muted)" }}>{user.role}{user.localDemo ? ` · ${t.localDemo}` : ""}</div>
             </div>
             <button onClick={() => { setTourStep(0); setTab("overview"); }} style={{ background: "var(--border-color)", color: "var(--text-main)", border: "1px solid var(--border-color)", borderRadius: "4px", padding: "3px 8px", cursor: "pointer", fontSize: "10px", fontWeight: "600" }}>
               Jüri turu
@@ -3243,20 +3305,46 @@ export default function App() {
             </div>
             <div style={{ padding: "20px", backgroundColor: "var(--bg-surface)", borderRadius: "6px", border: "1px solid var(--border-color)", marginTop: "16px" }}>
               <h4 style={{ margin: "0 0 12px 0", color: "var(--text-main)" }}>Kullanıcı ekle</h4>
-              <form onSubmit={handleAddUser} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                <input placeholder="kullanıcı" value={newUser.username} onChange={(e) => setNewUser({ ...newUser, username: e.target.value })} style={inputStyle} />
-                <input placeholder="parola" type="password" value={newUser.password} onChange={(e) => setNewUser({ ...newUser, password: e.target.value })} style={inputStyle} />
-                <input placeholder="ad soyad" value={newUser.name} onChange={(e) => setNewUser({ ...newUser, name: e.target.value })} style={inputStyle} />
-                <select value={newUser.role} onChange={(e) => setNewUser({ ...newUser, role: e.target.value })} style={inputStyle}>
-                  <option>Sistem Yöneticisi</option>
-                  <option>Yönetici</option>
-                  <option>Operatör</option>
-                </select>
-                <button type="submit" style={{ ...btnPrimary, gridColumn: "1 / -1" }}>Kullanıcıyı kaydet</button>
-              </form>
+              {user.localDemo || normalizeRole(user.role) !== "admin" ? (
+                <div style={{ fontSize: 13, color: "var(--text-muted)", lineHeight: 1.6 }}>
+                  Kullanıcı eklemek sistem yöneticisinin sunucu oturumuna açıktır. Parola bu cihazda saklanmaz.
+                </div>
+              ) : (
+                <form onSubmit={handleAddUser} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <input placeholder="kullanıcı" value={newUser.username} onChange={(e) => setNewUser({ ...newUser, username: e.target.value })} style={inputStyle} />
+                  <input placeholder="parola" type="password" value={newUser.password} onChange={(e) => setNewUser({ ...newUser, password: e.target.value })} style={inputStyle} />
+                  <input placeholder="ad soyad" value={newUser.name} onChange={(e) => setNewUser({ ...newUser, name: e.target.value })} style={inputStyle} />
+                  <select value={newUser.role} onChange={(e) => setNewUser({ ...newUser, role: e.target.value })} style={inputStyle}>
+                    <option>Sistem Yöneticisi</option>
+                    <option>Yönetici</option>
+                    <option>Operatör</option>
+                  </select>
+                  <button type="submit" style={{ ...btnPrimary, gridColumn: "1 / -1" }}>Kullanıcıyı kaydet</button>
+                </form>
+              )}
               <div style={{ marginTop: 12, fontSize: 12, color: "var(--text-muted)" }}>
-                Yerel kullanıcılar: {allLocalUsers().map((u) => u.username).join(", ")}
+                Kayıtlı adlar: {(serverUsers.length ? serverUsers : allLocalUsers()).map((u) => u.username).join(", ")}
               </div>
+            </div>
+            <div style={{ padding: "20px", backgroundColor: "var(--bg-surface)", borderRadius: "6px", border: "1px solid var(--border-color)", marginTop: "16px" }}>
+              <h4 style={{ margin: "0 0 12px 0", color: "var(--text-main)" }}>Parolayı yenile</h4>
+              {user.localDemo || normalizeRole(user.role) !== "admin" ? (
+                <div style={{ fontSize: 13, color: "var(--text-muted)", lineHeight: 1.6 }}>
+                  Unutulan parolayı yalnızca sistem yöneticisi, sunucu oturumundayken yeniler.
+                </div>
+              ) : (
+                <form onSubmit={handleResetPassword} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <select value={resetUser.username} onChange={(e) => setResetUser({ ...resetUser, username: e.target.value })} style={inputStyle}>
+                    <option value="">kullanıcı seçin</option>
+                    {(serverUsers.length ? serverUsers : allLocalUsers()).map((row) => (
+                      <option key={row.username} value={row.username}>{row.username}</option>
+                    ))}
+                  </select>
+                  <input placeholder="yeni parola" type="password" value={resetUser.password} onChange={(e) => setResetUser({ ...resetUser, password: e.target.value })} style={inputStyle} />
+                  <button type="submit" style={{ ...btnPrimary, gridColumn: "1 / -1" }}>Parolayı yenile</button>
+                </form>
+              )}
+              {resetNote && <div style={{ marginTop: 12, fontSize: 12, color: "var(--text-main)" }}>{resetNote}</div>}
             </div>
           </div>
         )}

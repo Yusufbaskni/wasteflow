@@ -39,3 +39,10 @@ class UserModel(Base):
     password_hash = Column(String, nullable=False)
     name = Column(String, nullable=False)
     role = Column(String, nullable=False, default="Operatör")
+
+class SessionModel(Base):
+    __tablename__ = "sessions"
+
+    token = Column(String, primary_key=True)
+    username = Column(String, nullable=False, index=True)
+    expires_at = Column(DateTime, nullable=False)

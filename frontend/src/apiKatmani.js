@@ -36,9 +36,18 @@ export async function resolveApiBase() {
   return resolvedBase;
 }
 
+function sessionToken() {
+  const session = loadState().session;
+  if (!session?.token || session.localDemo || session.token === "local-demo") return "";
+  return session.token;
+}
+
 export async function apiFetch(path, options = {}) {
   const base = await resolveApiBase();
-  return fetch(`${base}${path}`, options);
+  const headers = new Headers(options.headers || {});
+  const token = sessionToken();
+  if (token && !headers.has("Authorization")) headers.set("Authorization", `Bearer ${token}`);
+  return fetch(`${base}${path}`, { ...options, headers });
 }
 
 export function mapLot(row) {
@@ -63,8 +72,15 @@ export const LOCAL_USERS = [
 ];
 
 export function allLocalUsers() {
-  return [...LOCAL_USERS, ...(loadState().extraUsers || [])];
+  const extras = (loadState().extraUsers || []).map((user) => ({
+    username: user.username,
+    name: user.name,
+    role: user.role
+  }));
+  return [...LOCAL_USERS, ...extras];
 }
+
+class AuthError extends Error {}
 
 export async function loginRequest(username, password) {
   const userName = username.trim().toLowerCase();
@@ -74,13 +90,37 @@ export async function loginRequest(username, password) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username: userName, password })
     });
-    if (res.ok) return res.json();
-  } catch {
-    /* local fallback */
+    if (res.ok) {
+      const data = await res.json();
+      return { ...data, localDemo: false };
+    }
+    if (res.status === 401 || res.status === 403) {
+      let detail = "Kullanıcı adı veya parola hatalı.";
+      try {
+        const body = await res.json();
+        if (typeof body.detail === "string") detail = body.detail;
+      } catch {
+        /* sunucu gövdesi yok */
+      }
+      throw new AuthError(detail);
+    }
+  } catch (err) {
+    if (err instanceof AuthError) throw err;
   }
-  const local = allLocalUsers().find((u) => u.username === userName && u.password === password);
+  const local = LOCAL_USERS.find((u) => u.username === userName && u.password === password);
   if (!local) throw new Error("Kullanıcı adı veya parola hatalı.");
-  return { token: "local-session", name: local.name, role: local.role, username: local.username };
+  return { token: "local-demo", name: local.name, role: local.role, username: local.username, localDemo: true };
+}
+
+export function logoutRequest() {
+  const token = sessionToken();
+  if (!token) return;
+  resolveApiBase().then((base) => {
+    fetch(`${base}/api/v1/auth/logout`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` }
+    }).catch(() => {});
+  }).catch(() => {});
 }
 
 export async function createLotRemote(lot) {
