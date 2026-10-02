@@ -14,7 +14,7 @@
   },
   "build": {
     "appId": "com.wasteflow.app",
-    "productName": "Atık Takip Sistemi",
+    "productName": "WasteFlow",
     "directories": {
       "output": "release"
     },

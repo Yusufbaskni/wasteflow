@@ -1,5 +1,5 @@
 // günlük tur: en yakın durak sırası. tsp yazmadım.
-function haversine(a, b) {
+export function haversine(a, b) {
   const R = 6371;
   const dLat = ((b.lat - a.lat) * Math.PI) / 180;
   const dLng = ((b.lng - a.lng) * Math.PI) / 180;
@@ -9,9 +9,9 @@ function haversine(a, b) {
   return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
 }
 
-const START = { lat: 41.0186, lng: 28.9319, name: "FAC-01 Topkapı çıkış" };
+export const START = { lat: 41.0186, lng: 28.9319, name: "FAC-01 Topkapı çıkış" };
 
-function nearestNeighbor(start, points) {
+export function nearestNeighbor(start, points) {
   const remaining = [...points];
   const stops = [];
   let cur = start;

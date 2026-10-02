@@ -24,6 +24,7 @@ import { fetchLiveFx, formatMoney, loadCachedFx } from "./kur.js";
 import { compressImageFile, compressPortraitFile } from "./gorselKucuk.js";
 import QrScanner from "./KarekodOkuyucu.jsx";
 import JuryTour from "./JuriTuru.jsx";
+import DecisionExperiment from "./KararDeneyi.jsx";
 import FleetMap from "./FiloHarita.jsx";
 import { assignDestination, dispatchMessage, FLEET_DESTINATIONS, INITIAL_FLEET, makeVehicle, mergeFleet, needsRoadRoute, persistableFleet, smsHref, tickFleet, TRACKER_MODELS, waHref } from "./filo.js";
 import { fetchDrivingPath, pathLengthKm } from "./yolRotasi.js";
@@ -77,6 +78,7 @@ const dict = {
     reports: "Raporlar",
     collection: "Toplama Alanları",
     routes: "Toplama Rotası",
+    experiment: "Karar deneyi",
     fleet: "Araç & Sürücüler",
     inbox: "Depo Mesajları",
     siteInbox: "Toplama Mesajları",
@@ -126,6 +128,7 @@ const dict = {
     reports: "Reports",
     collection: "Collection Sites",
     routes: "Pickup Routes",
+    experiment: "Decision lab",
     fleet: "Vehicles & Drivers",
     inbox: "Depot Inbox",
     siteInbox: "Collection Inbox",
@@ -1138,7 +1141,7 @@ export default function App() {
         <div style={{ flexShrink: 0, padding: "0 8px", marginBottom: "16px" }}>
             <img src={LOGO_SRC} alt="İstinye Üniversitesi" className="brand-logo" style={{ width: "180px", height: "auto", marginBottom: "12px", display: "block" }} />
             <div style={{ color: "var(--text-main)", fontSize: "16px", fontWeight: "700", letterSpacing: "0.5px" }}>{t.title}</div>
-            <div style={{ color: "var(--text-muted)", fontSize: "11px", marginTop: "2px" }}>İstinye · v2.0</div>
+            <div style={{ color: "var(--text-muted)", fontSize: "11px", marginTop: "2px" }}>İstinye Üniversitesi</div>
         </div>
           <nav style={{ display: "flex", flexDirection: "column", gap: "4px", flex: 1, minHeight: 0, overflowY: "scroll", overflowX: "hidden", paddingRight: 4, scrollbarWidth: "thin", scrollbarColor: "var(--scrollbar-thumb) var(--bg-surface)" }}>
             {[
@@ -1146,6 +1149,7 @@ export default function App() {
               ["map", t.map],
               ["collection", t.collection],
               ["routes", t.routes],
+              ["experiment", t.experiment],
               ["fleet", t.fleet],
               ["inbox", t.inbox],
               ["siteInbox", t.siteInbox],
@@ -1719,6 +1723,7 @@ export default function App() {
               <button type="button" style={btnPrimary} onClick={() => printDriverManifest(dailyRoutes)}>
                 Sürücü listesini yazdır
               </button>
+              <button type="button" style={linkBtn} onClick={() => setTab("experiment")}>Karar deneyi (çift tur)</button>
               <button type="button" style={linkBtn} onClick={() => setTab("fleet")}>Filoda canlı konum</button>
               <button type="button" style={linkBtn} onClick={() => setTab("collection")}>Toplama dolulukları</button>
             </div>
@@ -1738,6 +1743,8 @@ export default function App() {
             </div>
           </div>
         )}
+
+        {tab === "experiment" && <DecisionExperiment sites={filledSites} />}
 
         {tab === "fleet" && (
           <div>

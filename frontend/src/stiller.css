@@ -651,3 +651,16 @@ tr:hover td {
 .leaflet-tooltip.map-pin-label::before {
   border-top-color: var(--accent-navy);
 }
+
+.experiment-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 340px) 1fr;
+  gap: 16px;
+  align-items: stretch;
+}
+
+@media (max-width: 900px) {
+  .experiment-grid {
+    grid-template-columns: 1fr;
+  }
+}

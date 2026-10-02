@@ -6,8 +6,9 @@ const STEPS = [
   { tab: "staff", title: "3 · Personel", text: "Özlük kartı: adres, yaş, mevki, maaş. İşe alım İnsan Kaynakları’nda." },
   { tab: "hr", title: "4 · İnsan Kaynakları", text: "İşe al / çıkar. Prim depo skoruna göre: hacim, işlenen lot, doluluk." },
   { tab: "fleet", title: "5 · Filo", text: "15 araç. Tırlar Çerkezköy Başer veya Hadımköy Star’a gider." },
-  { tab: "priceCompare", title: "6 · 1 kg karşılaştır", text: "Başer ve Star her malzeme için 1 kg kaç ₺ ödüyor; fark yüzde ile." },
-  { tab: "esg", title: "7 · ESG", text: "Kütle dengesi, lisans ve karbon sertifikası." }
+  { tab: "experiment", title: "6 · Karar deneyi", text: "Siz tur sırasını ve tesisi seçin; sistem kapalı. Karşılaştırınca yeşil tur, km ve yanlış tesis TL’si çıkar. CSV kayıt." },
+  { tab: "priceCompare", title: "7 · 1 kg karşılaştır", text: "Başer ve Star her malzeme için 1 kg kaç ₺ ödüyor; fark yüzde ile." },
+  { tab: "esg", title: "8 · ESG", text: "Kütle dengesi, lisans ve karbon sertifikası." }
 ];
 
 export default function JuryTour({ step, onNext, onSkip, onGo }) {

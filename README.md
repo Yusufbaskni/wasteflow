@@ -55,7 +55,7 @@ cd frontend
 npm run electron:build
 ```
 
-Çıktı `frontend/release/mac-arm64/Atık Takip Sistemi.app`. Windows taşınabilir exe: `npm run electron:build:win` → `frontend/release/Atik-Takip-Sistemi-Windows.exe`.
+Çıktı `frontend/release/mac-arm64/WasteFlow.app`. Windows taşınabilir exe: `npm run electron:build:win` → `frontend/release/Atik-Takip-Sistemi-Windows.exe`.
 
 ## Test
 

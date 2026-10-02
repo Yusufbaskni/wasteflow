@@ -1,8 +1,8 @@
 export const ROLE_TABS = {
   // operatör ayarlara girmesin diye kestim
-  admin: ["overview", "map", "collection", "routes", "fleet", "inbox", "siteInbox", "managers", "staff", "hr", "operations", "lots", "waybills", "sales", "salesStar", "priceCompare", "ai_vision", "iot", "esg", "reports", "audit", "settings"],
-  manager: ["overview", "map", "collection", "routes", "fleet", "inbox", "siteInbox", "managers", "staff", "hr", "lots", "waybills", "sales", "salesStar", "priceCompare", "iot", "esg", "reports", "audit", "settings"],
-  operator: ["map", "collection", "routes", "fleet", "inbox", "siteInbox", "managers", "staff", "operations", "lots", "waybills", "sales", "salesStar", "priceCompare", "ai_vision", "iot"]
+  admin: ["overview", "map", "collection", "routes", "experiment", "fleet", "inbox", "siteInbox", "managers", "staff", "hr", "operations", "lots", "waybills", "sales", "salesStar", "priceCompare", "ai_vision", "iot", "esg", "reports", "audit", "settings"],
+  manager: ["overview", "map", "collection", "routes", "experiment", "fleet", "inbox", "siteInbox", "managers", "staff", "hr", "lots", "waybills", "sales", "salesStar", "priceCompare", "iot", "esg", "reports", "audit", "settings"],
+  operator: ["map", "collection", "routes", "experiment", "fleet", "inbox", "siteInbox", "managers", "staff", "operations", "lots", "waybills", "sales", "salesStar", "priceCompare", "ai_vision", "iot"]
 };
 
 export function normalizeRole(role) {

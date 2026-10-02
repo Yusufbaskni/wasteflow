@@ -64,6 +64,33 @@ export function recommendRoute(material) {
   return { facility: "FAC-02 (Zeytinburnu)", reason: "Karışık fraksiyon FAC-02 aktarma deposuna alındı." };
 }
 
+export function explainRoute(material) {
+  const rec = recommendRoute(material);
+  const m = (material || "").toLowerCase();
+  const groups = [
+    { keys: ["tehlikeli", "kimyasal", "hazard"], label: "tehlikeli / kimyasal" },
+    { keys: ["elektronik", "weee", "e-atık", "e-atik"], label: "elektronik / WEEE" },
+    { keys: ["mukavva", "karton", "kağıt", "kagit", "paper"], label: "kağıt / mukavva" },
+    { keys: ["cam", "glass"], label: "cam" },
+    { keys: ["alüminyum", "aluminyum", "hurda", "demir", "çelik", "celik", "metal"], label: "metal" },
+    { keys: ["ahşap", "ahsap", "palet", "tekstil", "elyaf"], label: "ahşap / tekstil" },
+    { keys: ["organik", "gıda", "gida", "biyobozunur"], label: "organik" },
+    { keys: ["lastik", "kauçuk", "kaucuk"], label: "lastik" },
+    { keys: ["hdpe", "pp plastik", "pp ", "sert plastik"], label: "HDPE / PP" },
+    { keys: ["pet", "ldpe", "naylon", "polimer", "plastik"], label: "PET / polimer" }
+  ];
+  const matched = groups.find((g) => g.keys.some((k) => m.includes(k)));
+  const rejected = FACILITY_OPTIONS.filter((f) => f !== rec.facility).map((facility) => ({
+    facility,
+    why: "Bu malzemenin lisans hattı burası değil."
+  }));
+  return {
+    ...rec,
+    matchedLabel: matched?.label || "karışık / varsayılan",
+    rejected
+  };
+}
+
 export function applyRouting(lots) {
   return lots.map((lot) => {
     if (lot.status === "İŞLENDİ" || lot.status === "KARANTİNADA") return lot;
